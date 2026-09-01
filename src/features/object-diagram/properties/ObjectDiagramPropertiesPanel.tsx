@@ -1,18 +1,24 @@
-import type { ProjectDto } from '../../../api/dtos';
+import type { ProjectDto, ProjectReadModelDto } from '../../../api/dtos';
 import type { SelectionState } from '../../../state';
 import { ObjectAssociationPropertiesPanel } from './ObjectAssociationPropertiesPanel';
 import { ObjectPropertiesPanel } from './ObjectPropertiesPanel';
 
 interface ObjectDiagramPropertiesPanelProps {
   project: ProjectDto | null;
+  readVersion: string;
+  readModel?: ProjectReadModelDto | null;
   selection: SelectionState;
   onProjectChange: (project: ProjectDto) => void;
+  onRefreshProject: () => Promise<boolean>;
 }
 
 export function ObjectDiagramPropertiesPanel({
   project,
+  readVersion,
+  readModel,
   selection,
   onProjectChange,
+  onRefreshProject,
 }: ObjectDiagramPropertiesPanelProps) {
   if (!project) {
     return <p>Project snapshot is not loaded.</p>;
@@ -35,7 +41,10 @@ export function ObjectDiagramPropertiesPanel({
       <ObjectPropertiesPanel
         project={project}
         object={object}
+        readModel={readModel}
+        readVersion={readVersion}
         onProjectChange={onProjectChange}
+        onRefreshProject={onRefreshProject}
       />
     );
   }
@@ -51,7 +60,8 @@ export function ObjectDiagramPropertiesPanel({
       <ObjectAssociationPropertiesPanel
         project={project}
         link={link}
-        onProjectChange={onProjectChange}
+        expectedRevision={readVersion}
+        onRefreshProject={onRefreshProject}
       />
     );
   }

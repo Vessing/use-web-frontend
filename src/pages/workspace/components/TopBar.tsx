@@ -2,6 +2,7 @@ import { AppBrand } from '../../../components/AppBrand';
 import type { WorkspaceView } from '../../../app/navigation';
 import { CheckConstraintsButton } from './CheckConstraintsButton';
 import { NavigationTabs } from './NavigationTabs';
+import { WorkspaceHelp } from './WorkspaceHelp';
 
 interface TopBarProps {
   projectId: string;
@@ -29,6 +30,7 @@ export function TopBar({
       </div>
       <NavigationTabs projectId={projectId} activeView={activeView} />
       <div className="top-bar-actions" aria-label="Global actions">
+        <WorkspaceHelp activeView={activeView} />
         <button
           type="button"
           className="icon-button"

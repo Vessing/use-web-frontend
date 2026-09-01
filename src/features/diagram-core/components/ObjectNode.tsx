@@ -28,12 +28,13 @@ export function ObjectNode({ data, selected }: NodeProps<DiagramNode>) {
           {issueCount}
         </span>
       ) : null}
+      {nodeData.associationClass ? <div className="uml-node-stereotype">&laquo;associationClass&raquo;</div> : null}
       <div className="uml-node-title">
         {nodeData.name} : {nodeData.className}
       </div>
       <div className="uml-node-section">
         {nodeData.slots.map((slot) => (
-          <span key={slot}>{slot}</span>
+          <span key={slot} title={slot}>{slot}</span>
         ))}
       </div>
       <Handle type="source" position={Position.Right} />

@@ -3,6 +3,7 @@ import type { ProjectDto } from '../../../api';
 import { ClassDiagramView } from '../../../features/class-diagram';
 import { OclEditorView } from '../../../features/ocl-editor';
 import { ObjectDiagramView } from '../../../features/object-diagram';
+import { WorkspaceCanvasToolbar } from './WorkspaceCanvasToolbar';
 
 const viewTitles: Record<WorkspaceView, string> = {
   'class-diagram': 'Class Diagram',
@@ -27,37 +28,31 @@ export function MainWorkspaceView({
 }: MainWorkspaceViewProps) {
   if (activeView === 'class-diagram') {
     return (
-      <main className="workspace-main" aria-labelledby="workspace-view-title">
+      <main id="workspace-main" tabIndex={-1} className="workspace-main" aria-labelledby="workspace-view-title">
         <h1 id="workspace-view-title" className="workspace-view-title">
           {viewTitles[activeView]}
         </h1>
-        <ClassDiagramView
-          project={project}
-          isLoading={isLoadingProject}
-          error={projectError}
-        />
+        <WorkspaceCanvasToolbar activeView={activeView} project={project} />
+        <ClassDiagramView project={project} isLoading={isLoadingProject} error={projectError} />
       </main>
     );
   }
 
   if (activeView === 'object-diagram') {
     return (
-      <main className="workspace-main" aria-labelledby="workspace-view-title">
+      <main id="workspace-main" tabIndex={-1} className="workspace-main" aria-labelledby="workspace-view-title">
         <h1 id="workspace-view-title" className="workspace-view-title">
           {viewTitles[activeView]}
         </h1>
-        <ObjectDiagramView
-          project={project}
-          isLoading={isLoadingProject}
-          error={projectError}
-        />
+        <WorkspaceCanvasToolbar activeView={activeView} project={project} />
+        <ObjectDiagramView project={project} isLoading={isLoadingProject} error={projectError} />
       </main>
     );
   }
 
   if (activeView === 'ocl') {
     return (
-      <main className="workspace-main" aria-labelledby="workspace-view-title">
+      <main id="workspace-main" tabIndex={-1} className="workspace-main" aria-labelledby="workspace-view-title">
         <h1 id="workspace-view-title" className="workspace-view-title">
           {viewTitles[activeView]}
         </h1>
@@ -73,7 +68,7 @@ export function MainWorkspaceView({
   }
 
   return (
-    <main className="workspace-main" aria-labelledby="workspace-view-title">
+    <main id="workspace-main" tabIndex={-1} className="workspace-main" aria-labelledby="workspace-view-title">
       <section className="canvas-placeholder">
         <h1 id="workspace-view-title">{viewTitles[activeView]}</h1>
         <p>

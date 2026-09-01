@@ -8,9 +8,83 @@ import { getProjectId } from './mappers/projectMapper';
 import { createProjectApi } from './services/projectApi';
 import { createObjectModelApi } from './services/objectModelApi';
 import { createUmlApi } from './services/umlApi';
+import { createModelCommandApi } from './services/modelCommandApi';
 import { createValidationApi } from './services/validationApi';
 
 describe('API client and DTO contracts', () => {
+  it('uses revision-safe association create, update and delete command contracts', async () => {
+    const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+    const client = {
+      get: async <TResponse>(path: string) => {
+        calls.push({ method: 'GET', path });
+        return { revisionScope: 'MODEL', revision: '18', references: [], blocked: false } as TResponse;
+      },
+      post: async <TResponse, TRequest>(path: string, body: TRequest) => {
+        calls.push({ method: 'POST', path, body });
+        return { revisionScope: 'MODEL', revision: '19', result: (body as { draft: unknown }).draft } as TResponse;
+      },
+      put: async <TResponse, TRequest>(path: string, body: TRequest) => {
+        calls.push({ method: 'PUT', path, body });
+        return { revisionScope: 'MODEL', revision: '20', result: (body as { draft: unknown }).draft } as TResponse;
+      },
+      delete: async <TResponse, TRequest>(path: string, body?: TRequest) => {
+        calls.push({ method: 'DELETE', path, body });
+        return { revisionScope: 'MODEL', revision: '20' } as TResponse;
+      },
+    } as HttpClient;
+    const api = createModelCommandApi(client);
+    const draft = {
+      id: 'association-enrollment',
+      name: 'Enrollment',
+      ends: [],
+    };
+
+    await api.createAssociation('project 1', { expectedRevision: '18', draft });
+    await api.updateAssociation('project 1', draft.id, { expectedRevision: '19', draft });
+    await api.getDeleteImpact('project 1', 'ASSOCIATION', draft.id);
+    await api.deleteElement('project 1', 'ASSOCIATION', draft.id, {
+      expectedRevision: '18',
+      cascadeReferenceIds: ['reference-link'],
+    });
+
+    expect(calls).toEqual([
+      { method: 'POST', path: '/projects/project%201/commands/associations', body: { expectedRevision: '18', draft } },
+      { method: 'PUT', path: '/projects/project%201/commands/associations/association-enrollment', body: { expectedRevision: '19', draft } },
+      { method: 'GET', path: '/projects/project%201/commands/delete-impact/ASSOCIATION/association-enrollment' },
+      { method: 'DELETE', path: '/projects/project%201/commands/ASSOCIATION/association-enrollment', body: { expectedRevision: '18', cascadeReferenceIds: ['reference-link'] } },
+    ]);
+  });
+
+  it('uses revision-safe package and import command contracts', async () => {
+    const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+    const client = {
+      get: async <TResponse>() => ({} as TResponse),
+      post: async <TResponse, TRequest>(path: string, body: TRequest) => {
+        calls.push({ method: 'POST', path, body });
+        return { revisionScope: 'MODEL', revision: '19', result: (body as { draft: unknown }).draft } as TResponse;
+      },
+      put: async <TResponse, TRequest>(path: string, body: TRequest) => {
+        calls.push({ method: 'PUT', path, body });
+        return { revisionScope: 'MODEL', revision: '20', result: (body as { draft: unknown }).draft } as TResponse;
+      },
+      delete: async <TResponse>() => ({} as TResponse),
+    } as HttpClient;
+    const api = createModelCommandApi(client);
+    const umlPackage = { id: 'people', qualifiedName: 'university::people' };
+    const modelImport = { id: 'people-core', importingPackageId: 'people', importedPackageId: 'core', alias: 'shared', source: 'core.use', provenance: 'WORKSPACE' };
+
+    await api.createPackage('project 1', { expectedRevision: '18', draft: umlPackage });
+    await api.updatePackage('project 1', umlPackage.id, { expectedRevision: '19', draft: umlPackage });
+    await api.createImport('project 1', { expectedRevision: '20', draft: modelImport });
+    await api.updateImport('project 1', modelImport.id, { expectedRevision: '21', draft: modelImport });
+
+    expect(calls).toEqual([
+      { method: 'POST', path: '/projects/project%201/commands/packages', body: { expectedRevision: '18', draft: umlPackage } },
+      { method: 'PUT', path: '/projects/project%201/commands/packages/people', body: { expectedRevision: '19', draft: umlPackage } },
+      { method: 'POST', path: '/projects/project%201/commands/imports', body: { expectedRevision: '20', draft: modelImport } },
+      { method: 'PUT', path: '/projects/project%201/commands/imports/people-core', body: { expectedRevision: '21', draft: modelImport } },
+    ]);
+  });
   it('extracts a project id from the backend ProjectDto shape', () => {
     const project = createProjectFixture('Untitled Model');
 
@@ -81,6 +155,7 @@ describe('API client and DTO contracts', () => {
     await api.createProject({ name: 'Library' });
     await api.getProjects();
     await api.getProject('project library');
+    await api.getProjectReadModel('project library');
     await api.saveProject('project-library', project);
     await api.applyModelText('project-library', {
       modelText: 'model Library',
@@ -97,6 +172,7 @@ describe('API client and DTO contracts', () => {
       { method: 'POST', path: '/projects', body: { name: 'Library' } },
       { method: 'GET', path: '/projects' },
       { method: 'GET', path: '/projects/project%20library' },
+      { method: 'GET', path: '/projects/project%20library/read-model' },
       { method: 'PUT', path: '/projects/project-library', body: project },
       {
         method: 'POST',
@@ -202,11 +278,7 @@ describe('API client and DTO contracts', () => {
 
     await uml.deleteClass('project-library', 'class-user');
     await uml.deleteAttribute('project-library', 'class-user', 'attr-books');
-    await uml.deleteOperation('project-library', 'class-user', 'op-borrow');
-    await uml.deleteAssociation('project-library', 'assoc-borrows');
-    await uml.deleteInvariant('project-library', 'inv-max-books');
     await objectModel.deleteObject('project-library', 'object-alice');
-    await objectModel.deleteObjectLink('project-library', 'link-borrows-1');
 
     expect(calls).toEqual([
       { method: 'DELETE', path: '/projects/project-library/classes/class-user' },
@@ -214,14 +286,7 @@ describe('API client and DTO contracts', () => {
         method: 'DELETE',
         path: '/projects/project-library/classes/class-user/attributes/attr-books',
       },
-      {
-        method: 'DELETE',
-        path: '/projects/project-library/classes/class-user/operations/op-borrow',
-      },
-      { method: 'DELETE', path: '/projects/project-library/associations/assoc-borrows' },
-      { method: 'DELETE', path: '/projects/project-library/invariants/inv-max-books' },
       { method: 'DELETE', path: '/projects/project-library/objects/object-alice' },
-      { method: 'DELETE', path: '/projects/project-library/links/link-borrows-1' },
     ]);
   });
 
@@ -277,25 +342,10 @@ describe('API client and DTO contracts', () => {
     const client: Pick<HttpClient, 'delete'> = {
       delete: async <TResponse>() => backendProject as TResponse,
     };
-    const uml = createUmlApi(client as HttpClient);
     const objectModel = createObjectModelApi(client as HttpClient);
 
-    const afterAssociationDelete = await uml.deleteAssociation(
-      'project-library',
-      'assoc-borrows',
-    );
-    const afterObjectLinkDelete = await objectModel.deleteObjectLink(
-      'project-library',
-      'link-borrows-1',
-    );
+    const afterObjectLinkDelete = await objectModel.deleteObject('project-library', 'object-other');
 
-    expect(afterAssociationDelete.objectModel.objects[0].slots[0]).toMatchObject({
-      value: 6,
-      valueType: 'Integer',
-    });
-    expect(afterAssociationDelete.umlModel.invariants[0].expression).toBe(
-      'self.books <= 5',
-    );
     expect(afterObjectLinkDelete.objectModel.objects[0].slots[0].value).toBe(6);
   });
 

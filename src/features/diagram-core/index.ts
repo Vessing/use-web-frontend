@@ -13,6 +13,8 @@ export type {
   DiagramNode,
   DiagramValidationState,
   ObjectLinkEdgeData,
+  NaryHubNodeData,
+  NarySegmentEdgeData,
   ObjectNodeData,
   UmlAssociationEdgeData,
   UmlClassNodeData,

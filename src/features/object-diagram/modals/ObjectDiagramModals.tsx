@@ -1,15 +1,15 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 
-import { ApiClientError, objectModelApi } from '../../../api';
-import type { ProjectDto } from '../../../api/dtos';
+import { ApiClientError, snapshotCommandApi, type ProjectDto } from '../../../api';
 import { appStoreActions, type ModalState } from '../../../state';
-import { syncProjectChange } from '../../project-sync/syncProjectChange';
-import { addObject, appendObjectLink } from '../objectDiagramUpdates';
+import { TypeDirectedValueEditor } from '../properties/TypeDirectedValueEditor';
+import { NaryObjectLinkModal } from './NaryObjectLinkModal';
 
 interface ObjectDiagramModalsProps {
   modal: Exclude<ModalState, null>;
   project: ProjectDto;
-  onProjectChange: (project: ProjectDto) => void;
+  expectedRevision: string;
+  onRefreshProject: () => Promise<boolean>;
 }
 
 type ObjectDiagramModalState = Extract<
@@ -20,7 +20,8 @@ type ObjectDiagramModalState = Extract<
 export function ObjectDiagramModals({
   modal,
   project,
-  onProjectChange,
+  expectedRevision,
+  onRefreshProject,
 }: ObjectDiagramModalsProps) {
   if (!isObjectDiagramModal(modal)) {
     return null;
@@ -31,16 +32,18 @@ export function ObjectDiagramModals({
       <AddObjectModal
         modal={modal}
         project={project}
-        onProjectChange={onProjectChange}
+        expectedRevision={expectedRevision}
+        onRefreshProject={onRefreshProject}
       />
     );
   }
 
   return (
-    <AddObjectAssociationModal
+    <NaryObjectLinkModal
       modal={modal}
       project={project}
-      onProjectChange={onProjectChange}
+      expectedRevision={expectedRevision}
+      onRefreshProject={onRefreshProject}
     />
   );
 }
@@ -48,29 +51,44 @@ export function ObjectDiagramModals({
 function AddObjectModal({
   modal,
   project,
-  onProjectChange,
+  expectedRevision,
+  onRefreshProject,
 }: {
   modal: Extract<ObjectDiagramModalState, { type: 'addObject' }>;
   project: ProjectDto;
-  onProjectChange: (project: ProjectDto) => void;
+  expectedRevision: string;
+  onRefreshProject: () => Promise<boolean>;
 }) {
   const classes = project.umlModel.classes;
   const [name, setName] = useState('');
   const [classId, setClassId] = useState(modal.classId ?? classes[0]?.id ?? '');
   const [submitted, setSubmitted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [errorFieldPath, setErrorFieldPath] = useState<string | null>(null);
+  const [errorAttributeId, setErrorAttributeId] = useState<string | null>(null);
+  const selectedClass = classes.find((item) => item.id === classId);
+  const attributes = effectiveStoredAttributes(project, classId);
+  const [values, setValues] = useState<Record<string, unknown>>({});
   const trimmedName = name.trim();
   const hasDuplicateName = project.objectModel.objects.some(
     (object) => object.name.toLocaleLowerCase() === trimmedName.toLocaleLowerCase(),
   );
   const canSubmit =
-    classes.length > 0 && trimmedName.length > 0 && classId.length > 0 && !hasDuplicateName;
+    classes.length > 0 &&
+    trimmedName.length > 0 &&
+    classId.length > 0 &&
+    !hasDuplicateName &&
+    !selectedClass?.abstract &&
+    Boolean(expectedRevision) &&
+    !busy;
 
   return (
     <ModalShell
       title="Add Object"
       submitLabel="Create Object"
       canSubmit={canSubmit}
-      onSubmit={(event) => {
+      onSubmit={async (event) => {
         event.preventDefault();
         setSubmitted(true);
 
@@ -78,22 +96,52 @@ function AddObjectModal({
           return;
         }
 
-        const result = addObject(project, {
-          name,
-          classId,
-        });
-        syncProjectChange({
-          projectId: project.project.id,
-          nextProject: result.project,
-          onProjectChange,
-          successMessage: `Object "${trimmedName}" saved.`,
-        });
-        appStoreActions.select({
-          view: 'object-diagram',
-          type: 'object',
-          id: result.createdId,
-        });
-        appStoreActions.closeModal();
+        setBusy(true);
+        setError(null);
+        setErrorFieldPath(null);
+        setErrorAttributeId(null);
+        try {
+          const objectId = `object-${crypto.randomUUID()}`;
+          const result = await snapshotCommandApi.createObject(project.project.id, {
+            expectedRevision,
+            draft: {
+              id: objectId,
+              name: trimmedName,
+              classId,
+              slots: attributes.map((attribute) => ({
+                id: `slot-${crypto.randomUUID()}`,
+                attributeId: attribute.id,
+                value: { type: attribute.type, value: values[attribute.id] ?? null },
+                valueType: attribute.type,
+                isUnset: (values[attribute.id] ?? null) === null,
+              })),
+            },
+          });
+          if (!(await onRefreshProject()))
+            throw new Error('The authoritative object projection could not be reloaded.');
+          appStoreActions.select({ view: 'object-diagram', type: 'object', id: result.result.id });
+          appStoreActions.closeModal();
+        } catch (cause) {
+          if (cause instanceof ApiClientError) {
+            setErrorFieldPath(
+              typeof cause.dto.details?.fieldPath === 'string' ? cause.dto.details.fieldPath : null,
+            );
+            setErrorAttributeId(
+              typeof cause.dto.details?.attributeId === 'string'
+                ? cause.dto.details.attributeId
+                : null,
+            );
+          }
+          setError(
+            cause instanceof ApiClientError
+              ? `${cause.dto.code}: ${cause.dto.userMessage ?? cause.dto.message}`
+              : cause instanceof Error
+                ? cause.message
+                : 'The object command failed.',
+          );
+        } finally {
+          setBusy(false);
+        }
       }}
     >
       {classes.length === 0 ? (
@@ -113,167 +161,50 @@ function AddObjectModal({
         label="Type"
         classes={classes}
         value={classId}
-        onChange={setClassId}
-      />
-    </ModalShell>
-  );
-}
-
-function AddObjectAssociationModal({
-  modal,
-  project,
-  onProjectChange,
-}: {
-  modal: Extract<ObjectDiagramModalState, { type: 'addObjectAssociation' }>;
-  project: ProjectDto;
-  onProjectChange: (project: ProjectDto) => void;
-}) {
-  const associations = project.umlModel.associations;
-  const [associationId, setAssociationId] = useState(
-    modal.associationId ?? associations[0]?.id ?? '',
-  );
-  const association = associations.find((candidate) => candidate.id === associationId);
-  const [sourceEnd, targetEnd] = association?.ends ?? [];
-  const sourceObjects = useMemo(
-    () =>
-      sourceEnd
-        ? project.objectModel.objects.filter((object) => object.classId === sourceEnd.classId)
-        : [],
-    [project.objectModel.objects, sourceEnd],
-  );
-  const targetObjects = useMemo(
-    () =>
-      targetEnd
-        ? project.objectModel.objects.filter((object) => object.classId === targetEnd.classId)
-        : [],
-    [project.objectModel.objects, targetEnd],
-  );
-  const [sourceObjectId, setSourceObjectId] = useState(
-    modal.sourceObjectId ?? sourceObjects[0]?.id ?? '',
-  );
-  const [targetObjectId, setTargetObjectId] = useState(
-    modal.targetObjectId ?? targetObjects[0]?.id ?? '',
-  );
-  const [submitted, setSubmitted] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const sourceObjectIsValid = sourceObjects.some((object) => object.id === sourceObjectId);
-  const targetObjectIsValid = targetObjects.some((object) => object.id === targetObjectId);
-  const canSubmit =
-    Boolean(association) &&
-    sourceObjectId.length > 0 &&
-    targetObjectId.length > 0 &&
-    sourceObjectIsValid &&
-    targetObjectIsValid;
-
-  return (
-    <ModalShell
-      title="Add Object Association"
-      submitLabel={isSaving ? 'Creating...' : 'Create Association'}
-      canSubmit={canSubmit && !isSaving}
-      onSubmit={async (event) => {
-        event.preventDefault();
-        setSubmitted(true);
-        setSaveError(null);
-
-        if (!canSubmit) {
-          return;
-        }
-
-        setIsSaving(true);
-
-        try {
-          const createdLink = await objectModelApi.createObjectLink(project.project.id, {
-            associationId,
-            endValues:
-              sourceEnd && targetEnd
-                ? [
-                    { associationEndId: sourceEnd.id, objectId: sourceObjectId },
-                    { associationEndId: targetEnd.id, objectId: targetObjectId },
-                  ]
-                : [],
-          });
-          onProjectChange(appendObjectLink(project, createdLink));
-          appStoreActions.markValidationStale();
-          appStoreActions.addConsoleLog({
-            level: 'info',
-            source: 'api',
-            message: 'Object link saved.',
-          });
-          appStoreActions.select({
-            view: 'object-diagram',
-            type: 'objectLink',
-            id: createdLink.id,
-          });
-          appStoreActions.closeModal();
-        } catch (error) {
-          setSaveError(formatModalError(error));
-        } finally {
-          setIsSaving(false);
-        }
-      }}
-    >
-      {associations.length === 0 ? (
-        <p className="modal-form-error">
-          Create a class association before linking objects.
-        </p>
-      ) : null}
-      <ModalAssociationSelect
-        associations={associations}
-        value={associationId}
-        onChange={(value) => {
-          setAssociationId(value);
-          const nextAssociation = associations.find((candidate) => candidate.id === value);
-          const [nextSourceEnd, nextTargetEnd] = nextAssociation?.ends ?? [];
-          setSourceObjectId(
-            modal.sourceObjectId &&
-              nextSourceEnd &&
-              project.objectModel.objects.some(
-                (object) =>
-                  object.id === modal.sourceObjectId &&
-                  object.classId === nextSourceEnd.classId,
-              )
-              ? modal.sourceObjectId
-              : nextSourceEnd
-              ? project.objectModel.objects.find(
-                  (object) => object.classId === nextSourceEnd.classId,
-                )?.id ?? ''
-              : '',
-          );
-          setTargetObjectId(
-            modal.targetObjectId &&
-              nextTargetEnd &&
-              project.objectModel.objects.some(
-                (object) =>
-                  object.id === modal.targetObjectId &&
-                  object.classId === nextTargetEnd.classId,
-              )
-              ? modal.targetObjectId
-              : nextTargetEnd
-              ? project.objectModel.objects.find(
-                  (object) => object.classId === nextTargetEnd.classId,
-                )?.id ?? ''
-              : '',
-          );
+        onChange={(next) => {
+          setClassId(next);
+          setValues({});
+          setError(null);
+          setErrorFieldPath(null);
+          setErrorAttributeId(null);
         }}
       />
-      <div className="modal-row-grid">
-        <ModalObjectSelect
-          label="Source Object"
-          objects={sourceObjects}
-          value={sourceObjectId}
-          error={submitted && !sourceObjectIsValid ? 'Select a matching object.' : null}
-          onChange={setSourceObjectId}
-        />
-        <ModalObjectSelect
-          label="Target Object"
-          objects={targetObjects}
-          value={targetObjectId}
-          error={submitted && !targetObjectIsValid ? 'Select a matching object.' : null}
-          onChange={setTargetObjectId}
-        />
-      </div>
-      {saveError ? <p className="modal-form-error">{saveError}</p> : null}
+      {selectedClass?.abstract ? (
+        <p className="modal-form-error">Abstract Classes cannot be instantiated.</p>
+      ) : null}
+      <section className="modal-initial-values">
+        <h3>Initial Attribute Values</h3>
+        {attributes.length ? (
+          attributes.map((attribute) => (
+            <TypeDirectedValueEditor
+              key={attribute.id}
+              project={project}
+              type={attribute.type}
+              label={attribute.name}
+              value={values[attribute.id] ?? null}
+              errorPath={
+                !errorAttributeId || errorAttributeId === attribute.id ? errorFieldPath : null
+              }
+              onChange={(value) => {
+                setValues((current) => ({ ...current, [attribute.id]: value }));
+                setError(null);
+                setErrorFieldPath(null);
+                setErrorAttributeId(null);
+              }}
+            />
+          ))
+        ) : (
+          <p className="property-empty">No stored instance attributes.</p>
+        )}
+      </section>
+      {error ? (
+        <p className="modal-form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {!expectedRevision ? (
+        <p className="modal-form-error">A snapshot revision is required.</p>
+      ) : null}
     </ModalShell>
   );
 }
@@ -286,13 +217,7 @@ interface ModalShellProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
-function ModalShell({
-  title,
-  submitLabel,
-  canSubmit,
-  children,
-  onSubmit,
-}: ModalShellProps) {
+function ModalShell({ title, submitLabel, canSubmit, children, onSubmit }: ModalShellProps) {
   return (
     <div className="modal-backdrop" role="presentation">
       <form
@@ -365,8 +290,9 @@ function ModalClassSelect({
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         {classes.map((umlClass) => (
-          <option key={umlClass.id} value={umlClass.id}>
-            {umlClass.name}
+          <option key={umlClass.id} value={umlClass.id} disabled={Boolean(umlClass.abstract)}>
+            {umlClass.qualifiedName ?? umlClass.name}
+            {umlClass.abstract ? ' (abstract)' : ''}
           </option>
         ))}
       </select>
@@ -374,76 +300,23 @@ function ModalClassSelect({
   );
 }
 
-function ModalAssociationSelect({
-  associations,
-  value,
-  onChange,
-}: {
-  associations: ProjectDto['umlModel']['associations'];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="modal-field">
-      <span>Association</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        {associations.map((association) => (
-          <option key={association.id} value={association.id}>
-            {association.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+function effectiveStoredAttributes(
+  project: ProjectDto,
+  classId: string,
+  visited = new Set<string>(),
+): ProjectDto['umlModel']['classes'][number]['attributes'] {
+  if (visited.has(classId)) return [];
+  visited.add(classId);
+  const umlClass = project.umlModel.classes.find((item) => item.id === classId);
+  if (!umlClass) return [];
+  return [
+    ...(umlClass.superClassIds ?? []).flatMap((id) =>
+      effectiveStoredAttributes(project, id, visited),
+    ),
+    ...umlClass.attributes,
+  ].filter((attribute) => !attribute.staticAttribute && !attribute.derived);
 }
 
-function ModalObjectSelect({
-  label,
-  objects,
-  value,
-  error,
-  onChange,
-}: {
-  label: string;
-  objects: ProjectDto['objectModel']['objects'];
-  value: string;
-  error?: string | null;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="modal-field">
-      <span>{label}</span>
-      <select
-        value={value}
-        aria-invalid={error ? true : undefined}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value="">Select object</option>
-        {objects.map((object) => (
-          <option key={object.id} value={object.id}>
-            {object.name}
-          </option>
-        ))}
-      </select>
-      {error ? <small className="property-field-error">{error}</small> : null}
-    </label>
-  );
-}
-
-function isObjectDiagramModal(
-  modal: Exclude<ModalState, null>,
-): modal is ObjectDiagramModalState {
+function isObjectDiagramModal(modal: Exclude<ModalState, null>): modal is ObjectDiagramModalState {
   return modal.type === 'addObject' || modal.type === 'addObjectAssociation';
-}
-
-function formatModalError(error: unknown) {
-  if (error instanceof ApiClientError) {
-    return error.dto?.userMessage ?? error.dto?.message ?? error.message;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return 'Object link could not be created.';
 }

@@ -1,4 +1,6 @@
 import type { ProjectDto, ValidationErrorDto } from '../../../api';
+import { navigateTo } from '../../../app/browserRouter';
+import { getWorkspacePath } from '../../../app/navigation';
 import { appStoreActions, type ValidationUiState } from '../../../state';
 import {
   collectValidationMessages,
@@ -21,6 +23,14 @@ export function ValidationResultsPanel({
 }: ValidationResultsPanelProps) {
   const result = validation.result;
   const messages = collectValidationMessages(result);
+
+  if (validation.isLoading) {
+    return <div className="validation-results-state validation-results-loading" role="status"><strong>Checking constraints...</strong><p>The backend is evaluating the persisted model and current snapshot.</p></div>;
+  }
+
+  if (validation.error) {
+    return <div className="validation-results-state validation-results-error" role="alert"><strong>Validation could not be completed.</strong><p>{validation.error}</p></div>;
+  }
 
   if (!result) {
     return (
@@ -94,6 +104,11 @@ function ValidationSummary({ validation, messageCount }: ValidationSummaryProps)
           ? 'The latest validation result contains no messages.'
           : `${messageCount} validation message(s) returned by the backend.`}
       </p>
+      <div className="validation-result-meta">
+        {result.objectModelId ? <span>Snapshot {result.objectModelId}</span> : null}
+        {result.id ? <span>Result {result.id}</span> : null}
+        {result.checkedAt ?? result.finishedAt ? <time dateTime={result.checkedAt ?? result.finishedAt}>{formatCheckedAt(result.checkedAt ?? result.finishedAt)}</time> : null}
+      </div>
     </header>
   );
 }
@@ -118,6 +133,9 @@ function ValidationErrorItem({
     const selection = resolveValidationErrorSelection(error);
     if (selection) {
       appStoreActions.select(selection);
+      if (project?.project.id) {
+        navigateTo(getWorkspacePath(project.project.id, selection.view));
+      }
     }
   }
 
@@ -156,4 +174,10 @@ function ValidationErrorItem({
       </div>
     </li>
   );
+}
+
+function formatCheckedAt(value: string | undefined) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }

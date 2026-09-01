@@ -28,19 +28,25 @@ export function UmlClassNode({ data, selected }: NodeProps<DiagramNode>) {
           {issueCount}
         </span>
       ) : null}
-      <div className="uml-node-title">{nodeData.name}</div>
+      {nodeData.qualifiedName && nodeData.qualifiedName !== nodeData.name ? (
+        <div className="uml-node-namespace">{nodeData.qualifiedName.split('::').slice(0, -1).join('::')}</div>
+      ) : null}
+      {nodeData.associationClass ? <div className="uml-node-stereotype">&laquo;associationClass&raquo;</div> : null}
+      <div className={`uml-node-title ${nodeData.abstractClass ? 'uml-node-title-abstract' : ''}`} title={nodeData.qualifiedName}>
+        {nodeData.name}
+      </div>
       <div className="uml-node-section">
         {nodeData.attributes.length === 0 ? (
           <span className="uml-node-muted">No attributes</span>
         ) : (
-          nodeData.attributes.map((attribute) => <span key={attribute}>{attribute}</span>)
+          nodeData.attributes.map((attribute) => <span key={attribute} title={attribute}>{attribute}</span>)
         )}
       </div>
       <div className="uml-node-section">
         {nodeData.operations.length === 0 ? (
           <span className="uml-node-muted">No operations</span>
         ) : (
-          nodeData.operations.map((operation) => <span key={operation}>{operation}</span>)
+          nodeData.operations.map((operation) => <span key={operation} title={operation}>{operation}</span>)
         )}
       </div>
       {nodeData.invariants.length > 0 ? (

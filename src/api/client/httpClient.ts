@@ -10,7 +10,7 @@ export interface HttpClient {
   get<TResponse>(path: string): Promise<TResponse>;
   post<TResponse, TRequest = unknown>(path: string, body?: TRequest): Promise<TResponse>;
   put<TResponse, TRequest = unknown>(path: string, body: TRequest): Promise<TResponse>;
-  delete<TResponse>(path: string): Promise<TResponse>;
+  delete<TResponse, TRequest = unknown>(path: string, body?: TRequest): Promise<TResponse>;
 }
 
 interface JsonRequestOptions<TRequest> {
@@ -53,7 +53,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     get: (path) => request(path, { method: 'GET' }),
     post: (path, body) => request(path, { method: 'POST', body }),
     put: (path, body) => request(path, { method: 'PUT', body }),
-    delete: (path) => request(path, { method: 'DELETE' }),
+    delete: (path, body) => request(path, { method: 'DELETE', body }),
   };
 }
 

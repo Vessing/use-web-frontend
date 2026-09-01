@@ -2,11 +2,9 @@ import { httpClient, type HttpClient } from '../client/httpClient';
 import type {
   CreateAssociationRequestDto,
   CreateClassRequestDto,
-  CreateInvariantRequestDto,
   ProjectDto,
   UmlAssociationDto,
   UmlClassDto,
-  UmlInvariantDto,
 } from '../dtos';
 import { normalizeProjectDto } from '../mappers/projectDtoNormalizer';
 
@@ -29,34 +27,11 @@ export function createUmlApi(client: HttpClient = httpClient) {
           classId,
         )}/attributes/${encodeURIComponent(attributeId)}`,
       ).then(normalizeProjectDto),
-    deleteOperation: (projectId: string, classId: string, operationId: string) =>
-      client.delete<ProjectDto>(
-        `/projects/${encodeURIComponent(projectId)}/classes/${encodeURIComponent(
-          classId,
-        )}/operations/${encodeURIComponent(operationId)}`,
-      ).then(normalizeProjectDto),
     createAssociation: (projectId: string, request: CreateAssociationRequestDto) =>
       client.post<UmlAssociationDto>(
         `/projects/${encodeURIComponent(projectId)}/associations`,
         request,
       ),
-    deleteAssociation: (projectId: string, associationId: string) =>
-      client.delete<ProjectDto>(
-        `/projects/${encodeURIComponent(projectId)}/associations/${encodeURIComponent(
-          associationId,
-        )}`,
-      ).then(normalizeProjectDto),
-    createInvariant: (projectId: string, request: CreateInvariantRequestDto) =>
-      client.post<UmlInvariantDto>(
-        `/projects/${encodeURIComponent(projectId)}/invariants`,
-        request,
-      ),
-    deleteInvariant: (projectId: string, invariantId: string) =>
-      client.delete<ProjectDto>(
-        `/projects/${encodeURIComponent(projectId)}/invariants/${encodeURIComponent(
-          invariantId,
-        )}`,
-      ).then(normalizeProjectDto),
   };
 }
 

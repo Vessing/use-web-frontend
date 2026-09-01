@@ -75,7 +75,9 @@ describe('App', () => {
       <DashboardPage getProject={getProject} getRecentProjects={getRecentProjects} />,
     );
 
-    expect(await screen.findByRole('button', { name: 'Open University System' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Open University System' }),
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Open University System' }));
 
@@ -112,7 +114,9 @@ describe('App', () => {
       },
     }));
 
-    renderWithProviders(<DashboardPage createProject={createProject} getRecentProjects={emptyRecentProjects} />);
+    renderWithProviders(
+      <DashboardPage createProject={createProject} getRecentProjects={emptyRecentProjects} />,
+    );
 
     await userEvent.click(screen.getByRole('button', { name: '+ Start Project' }));
     await userEvent.type(screen.getByLabelText('Project Name'), '  Library Model  ');
@@ -126,7 +130,9 @@ describe('App', () => {
     window.history.pushState(null, '', '/');
     const createProject = vi.fn();
 
-    renderWithProviders(<DashboardPage createProject={createProject} getRecentProjects={emptyRecentProjects} />);
+    renderWithProviders(
+      <DashboardPage createProject={createProject} getRecentProjects={emptyRecentProjects} />,
+    );
 
     await userEvent.click(screen.getByRole('button', { name: '+ Start Project' }));
     await userEvent.click(screen.getByRole('button', { name: 'Create Project' }));
@@ -282,7 +288,7 @@ describe('App', () => {
 
     expect(screen.getByText('library-demo')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Class Diagram', level: 1 })).toBeInTheDocument();
-    expect(screen.getByLabelText('Explorer Sidebar')).toBeInTheDocument();
+    expect(screen.getByLabelText('Model Explorer')).toBeInTheDocument();
     expect(screen.getByLabelText('Properties Panel')).toBeInTheDocument();
     expect(screen.getByLabelText('Bottom Panel')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Check Constraints' })).toBeInTheDocument();
@@ -294,7 +300,7 @@ describe('App', () => {
     renderWithProviders(<App />);
 
     expect(screen.getByRole('heading', { name: 'OCL Editor', level: 1 })).toBeInTheDocument();
-    expect(screen.queryByLabelText('Explorer Sidebar')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Model Explorer')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Properties Panel')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Bottom Panel')).toBeInTheDocument();
   });
@@ -308,7 +314,7 @@ describe('App', () => {
 
     expect(window.location.pathname).toBe('/projects/library-demo/object-diagram');
     expect(screen.getByRole('heading', { name: 'Object Diagram', level: 1 })).toBeInTheDocument();
-    expect(screen.getByText('Objects')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create Object' })).toBeInTheDocument();
   });
 });
 

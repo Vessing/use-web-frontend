@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { projectApi, type ProjectDto } from '../../api';
+import { projectApi, type ProjectDto, type ProjectReadModelDto } from '../../api';
 import type { WorkspaceView } from '../../app/navigation';
 import { appStoreActions, getAppState, useAppStore, type LayoutDraftState } from '../../state';
 import { BottomPanel } from './components/BottomPanel';
@@ -17,6 +17,7 @@ interface WorkspaceLayoutProps {
 
 export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps) {
   const [project, setProject] = useState<ProjectDto | null>(null);
+  const [readModel, setReadModel] = useState<ProjectReadModelDto | null>(null);
   const [isLoadingProject, setIsLoadingProject] = useState(true);
   const [isRefreshingProject, setIsRefreshingProject] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -28,41 +29,49 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
     projectRef.current = project;
   }, [project]);
 
-  const loadProject = useCallback(async (options?: { showConsoleFeedback?: boolean }) => {
-    setIsLoadingProject(true);
-    setProjectError(null);
+  const loadProject = useCallback(
+    async (options?: { showConsoleFeedback?: boolean }) => {
+      setIsLoadingProject(true);
+      setProjectError(null);
 
-    try {
-      const loadedProject = await projectApi.getProject(projectId);
-      setProject(loadedProject);
-      projectRef.current = loadedProject;
+      try {
+        const [loadedProject, loadedReadModel] = await Promise.all([
+          projectApi.getProject(projectId),
+          projectApi.getProjectReadModel(projectId),
+        ]);
+        setProject(loadedProject);
+        setReadModel(loadedReadModel);
+        projectRef.current = loadedProject;
 
-      if (options?.showConsoleFeedback) {
-        appStoreActions.addConsoleLog({
-          level: 'info',
-          source: 'api',
-          message: 'Project refreshed.',
-        });
+        if (options?.showConsoleFeedback) {
+          appStoreActions.addConsoleLog({
+            level: 'info',
+            source: 'api',
+            message: 'Project refreshed.',
+          });
+        }
+
+        return true;
+      } catch (error) {
+        setProject(null);
+        setReadModel(null);
+        setProjectError('The project model could not be loaded.');
+
+        if (options?.showConsoleFeedback) {
+          appStoreActions.addConsoleLog({
+            level: 'error',
+            source: 'api',
+            message: formatProjectLoadError(error),
+          });
+        }
+
+        return false;
+      } finally {
+        setIsLoadingProject(false);
       }
-
-      return true;
-    } catch (error) {
-      setProject(null);
-      setProjectError('The project model could not be loaded.');
-
-      if (options?.showConsoleFeedback) {
-        appStoreActions.addConsoleLog({
-          level: 'error',
-          source: 'api',
-          message: formatProjectLoadError(error),
-        });
-      }
-
-      return false;
-    } finally {
-      setIsLoadingProject(false);
-    }
-  }, [projectId]);
+    },
+    [projectId],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -142,6 +151,7 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
 
   return (
     <div className="workspace-shell">
+      <a className="skip-link" href="#workspace-main">Skip to workspace</a>
       <TopBar
         projectId={projectId}
         projectName={project?.project.name}
@@ -149,9 +159,17 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
         isRefreshing={isRefreshingProject}
         onRefresh={handleRefresh}
       />
-      <div className={usesWorkspaceSidebars ? 'workspace-grid' : 'workspace-grid workspace-grid-full'}>
+      <div
+        className={usesWorkspaceSidebars ? 'workspace-grid' : 'workspace-grid workspace-grid-full'}
+      >
         {usesWorkspaceSidebars ? (
-          <ExplorerSidebar activeView={activeView} canEditProject={Boolean(project)} />
+          <ExplorerSidebar
+            activeView={activeView}
+            project={project}
+            readModel={readModel}
+            isLoading={isLoadingProject}
+            error={projectError}
+          />
         ) : null}
         <MainWorkspaceView
           activeView={activeView}
@@ -164,12 +182,19 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
           <PropertiesPanel
             activeView={activeView}
             project={project}
+            readModel={readModel}
             onProjectChange={setProject}
+            onRefreshProject={() => loadProject()}
           />
         ) : null}
       </div>
-      <BottomPanel project={project} />
-      <ModalLayer project={project} onProjectChange={setProject} />
+      <BottomPanel project={project} diagnostics={readModel?.diagnostics ?? []} />
+      <ModalLayer
+        project={project}
+        readModel={readModel}
+        onProjectChange={setProject}
+        onRefreshProject={() => loadProject()}
+      />
     </div>
   );
 }
@@ -185,10 +210,7 @@ function mergeLayoutDraft(project: ProjectDto, layoutDraft: LayoutDraftState): P
       ...project.layout,
       classDiagram: {
         ...project.layout.classDiagram,
-        nodes: mergeNodeLayouts(
-          project.layout.classDiagram.nodes,
-          layoutDraft.classDiagram.nodes,
-        ),
+        nodes: mergeNodeLayouts(project.layout.classDiagram.nodes, layoutDraft.classDiagram.nodes),
         edges: layoutDraft.classDiagram.edges ?? project.layout.classDiagram.edges,
       },
       objectDiagram: {

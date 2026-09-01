@@ -89,6 +89,97 @@ describe('mapProjectToObjectDiagram', () => {
     expect(diagram.nodes[0].selected).toBe(true);
     expect(diagram.nodes[1].selected).toBe(false);
   });
+
+  it('formats persisted DataType, tuple and collection slot values without object coercion', () => {
+    const project = createLibraryProject();
+    project.umlModel.classes[0].attributes.push(
+      { id: 'attr-user-balance', name: 'balance', type: 'Money' },
+      { id: 'attr-user-summary', name: 'summary', type: 'Tuple(label:String,amount:Money)' },
+      { id: 'attr-user-tags', name: 'tags', type: 'Bag(String)' },
+      { id: 'attr-user-note', name: 'note', type: 'String' },
+    );
+    project.objectModel.objects[0].slots.push(
+      {
+        id: 'slot-user-balance',
+        attributeId: 'attr-user-balance',
+        value: { amount: 12.5, currency: 'EUR' },
+        valueType: 'Money',
+      },
+      {
+        id: 'slot-user-summary',
+        attributeId: 'attr-user-summary',
+        value: { label: 'Open', amount: { amount: 12.5, currency: 'EUR' } },
+        valueType: 'Tuple(label:String,amount:Money)',
+      },
+      {
+        id: 'slot-user-tags',
+        attributeId: 'attr-user-tags',
+        value: ['urgent', 'urgent'],
+        valueType: 'Bag(String)',
+      },
+      {
+        id: 'slot-user-note',
+        attributeId: 'attr-user-note',
+        value: null,
+        valueType: 'String',
+      },
+    );
+
+    const diagram = mapProjectToObjectDiagram(project);
+
+    expect(diagram.nodes[0].data).toMatchObject({
+      slots: [
+        'name = Alice',
+        'books = 6',
+        'balance = { amount = 12.5, currency = EUR }',
+        'summary = { label = Open, amount = { amount = 12.5, currency = EUR } }',
+        'tags = [urgent, urgent]',
+        'note = null',
+      ],
+    });
+  });
+
+  it('renders one central node and all participants for an n-ary object link', () => {
+    const project = createLibraryProject();
+    project.umlModel.classes.push({ id: 'class-branch', name: 'Branch', attributes: [], operations: [] });
+    project.umlModel.associations[0].ends.push({
+      id: 'end-borrows-branch', classId: 'class-branch', roleName: 'branch',
+      multiplicity: { lower: 1, upper: 1, unbounded: false, raw: '1' },
+      qualifiers: [{ id: 'qualifier-shelf', name: 'shelf', type: 'String', order: 0 }],
+    });
+    project.objectModel.objects.push({ id: 'object-main', name: 'main', classId: 'class-branch', slots: [] });
+    project.objectModel.links[0].endValues.push({
+      associationEndId: 'end-borrows-branch', objectId: 'object-main',
+      qualifierValues: [{ qualifierId: 'qualifier-shelf', value: { type: 'String', value: 'A-12' } }],
+    });
+
+    const diagram = mapProjectToObjectDiagram(project);
+
+    expect(diagram.nodes).toContainEqual(expect.objectContaining({
+      id: 'nary-link:link-borrows-1', type: 'naryHub',
+      data: expect.objectContaining({ participantCount: 3 }),
+    }));
+    expect(diagram.edges.filter((edge) => edge.type === 'narySegment')).toHaveLength(3);
+  });
+
+  it('renders a coupled association-class instance with shared selection and identity connector', () => {
+    const project = createLibraryProject();
+    project.umlModel.classes.push({ id: 'class-loan', name: 'Loan', attributes: [], operations: [] });
+    project.umlModel.associations[0].associationClassId = 'class-loan';
+    project.objectModel.objects.push({ id: 'object-loan', name: 'loan1', classId: 'class-loan', slots: [] });
+    project.objectModel.links[0].associationClassObjectId = 'object-loan';
+
+    const diagram = mapProjectToObjectDiagram(project, {}, {
+      view: 'object-diagram', type: 'objectLink', id: 'link-borrows-1',
+    });
+    const loan = diagram.nodes.find((node) => node.id === 'object-loan');
+
+    expect(loan?.selected).toBe(true);
+    expect(loan?.data).toMatchObject({ associationClass: true, ref: { elementType: 'objectLink', elementId: 'link-borrows-1' } });
+    expect(diagram.edges).toContainEqual(expect.objectContaining({
+      id: 'association-class-object:link-borrows-1', type: 'semanticConnector', target: 'object-loan',
+    }));
+  });
 });
 
 function createLibraryProject(): ProjectDto {

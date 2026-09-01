@@ -16,7 +16,7 @@ export function CheckConstraintsButton({
 
   async function handleCheckConstraints() {
     setIsChecking(true);
-    appStoreActions.markValidationStale();
+    appStoreActions.beginValidation();
     appStoreActions.addConsoleLog({
       level: 'info',
       source: 'validation',
@@ -35,11 +35,12 @@ export function CheckConstraintsButton({
         message: formatValidationCompletedMessage(result),
       });
     } catch (error) {
-      appStoreActions.setActiveBottomPanelTab('console');
+      const message = formatValidationErrorMessage(error);
+      appStoreActions.setValidationError(message);
       appStoreActions.addConsoleLog({
         level: 'error',
         source: 'api',
-        message: formatValidationErrorMessage(error),
+        message,
       });
     } finally {
       setIsChecking(false);

@@ -12,21 +12,31 @@ import { useEffect, useState } from 'react';
 
 import type { WorkspaceView } from '../../../app/navigation';
 import type { SelectionState } from '../../../state';
-import { appStoreActions } from '../../../state';
+import { appStoreActions, getAppState } from '../../../state';
 import type { DiagramEdge, DiagramElementKind, DiagramNode } from '../types';
 import { ObjectLinkEdge } from './ObjectLinkEdge';
 import { ObjectNode } from './ObjectNode';
+import { NaryHubNode } from './NaryHubNode';
+import { NarySegmentEdge } from './NarySegmentEdge';
+import { SemanticConnectorEdge } from './SemanticConnectorEdge';
 import { UmlAssociationEdge } from './UmlAssociationEdge';
 import { UmlClassNode } from './UmlClassNode';
+import { UmlGeneralizationEdge } from './UmlGeneralizationEdge';
+import { ModelTypeNode } from './ModelTypeNode';
 
 const nodeTypes = {
   umlClass: UmlClassNode,
   objectNode: ObjectNode,
+  naryHub: NaryHubNode,
+  modelType: ModelTypeNode,
 } satisfies NodeTypes;
 
 const edgeTypes = {
   umlAssociation: UmlAssociationEdge,
+  umlGeneralization: UmlGeneralizationEdge,
   objectLink: ObjectLinkEdge,
+  narySegment: NarySegmentEdge,
+  semanticConnector: SemanticConnectorEdge,
 } satisfies EdgeTypes;
 
 interface DiagramCanvasBaseProps {
@@ -60,7 +70,14 @@ export function DiagramCanvasBase({
           setCanvasNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
           persistNodePositionChanges(activeView, changes);
         }}
+        onNodeClick={(_, node) => {
+          if (node.data.ref) appStoreActions.select(selectionFor(activeView, node.data.ref));
+        }}
+        onEdgeClick={(_, edge) => {
+          if (edge.data?.ref) appStoreActions.select(selectionFor(activeView, edge.data.ref));
+        }}
         onSelectionChange={(selection) => updateSelection(activeView, selection)}
+        onPaneClick={() => appStoreActions.clearSelection()}
       >
         <Background />
         <Controls showInteractive={false} />
@@ -91,6 +108,15 @@ function updateSelection(
 ) {
   const selectedNode = selection.nodes[0] as DiagramNode | undefined;
   const selectedEdge = selection.edges[0] as DiagramEdge | undefined;
+  const currentSelection = getAppState().selection;
+
+  if (
+    activeView === 'class-diagram' &&
+    currentSelection?.view === 'class-diagram' &&
+    (currentSelection.type === 'invariant' || currentSelection.type === 'package' || currentSelection.type === 'import' || currentSelection.type === 'enumeration' || currentSelection.type === 'dataType')
+  ) {
+    return;
+  }
 
   if (selectedNode?.data.ref) {
     appStoreActions.select(selectionFor(activeView, selectedNode.data.ref));
@@ -102,7 +128,6 @@ function updateSelection(
     return;
   }
 
-  appStoreActions.clearSelection();
 }
 
 function selectionFor(
@@ -111,7 +136,7 @@ function selectionFor(
 ): SelectionState {
   if (
     activeView === 'class-diagram' &&
-    (ref.elementType === 'class' || ref.elementType === 'association')
+    (ref.elementType === 'class' || ref.elementType === 'association' || ref.elementType === 'enumeration' || ref.elementType === 'dataType')
   ) {
     return {
       view: 'class-diagram',

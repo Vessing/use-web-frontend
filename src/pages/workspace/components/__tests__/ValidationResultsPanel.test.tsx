@@ -18,8 +18,22 @@ describe('ValidationResultsPanel', () => {
     expect(screen.getByText(/Use Check Constraints/)).toBeInTheDocument();
   });
 
+  it('shows loading and request error states without inventing a validation result', () => {
+    appStoreActions.beginValidation();
+    const { rerender } = render(<ValidationResultsPanel validation={getAppState().validation} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Checking constraints');
+
+    appStoreActions.setValidationError('Validation service unavailable.');
+    rerender(<ValidationResultsPanel validation={getAppState().validation} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Validation service unavailable.');
+    expect(getAppState().validation.result).toBeNull();
+  });
+
   it('shows a valid state with summary counts and no errors', () => {
     appStoreActions.setValidationResult({
+      id: 'validation-19',
+      objectModelId: 'snapshot-current',
+      checkedAt: '2026-09-01T12:00:00Z',
       status: 'VALID',
       summary: {
         errorCount: 0,
@@ -36,6 +50,8 @@ describe('ValidationResultsPanel', () => {
     expect(screen.getByText('VALID')).toBeInTheDocument();
     expect(screen.getByText('No validation issues found.')).toBeInTheDocument();
     expect(screen.getByLabelText('Validation summary')).toHaveTextContent('Errors0');
+    expect(screen.getByText(/Snapshot snapshot-current/)).toBeInTheDocument();
+    expect(screen.getByText(/Result validation-19/)).toBeInTheDocument();
   });
 
   it('shows validation errors with details and maps a click to selection state', async () => {

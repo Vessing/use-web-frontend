@@ -6,6 +6,7 @@ import type {
   ImportProjectRequestDto,
   ImportProjectResultDto,
   ProjectDto,
+  ProjectReadModelDto,
   ProjectSummaryDto,
 } from '../dtos';
 import { normalizeProjectDto, toBackendProjectDto } from '../mappers/projectDtoNormalizer';
@@ -13,6 +14,7 @@ import { normalizeProjectDto, toBackendProjectDto } from '../mappers/projectDtoN
 export interface ProjectApi {
   createProject(request: CreateProjectRequestDto): Promise<ProjectDto>;
   getProject(projectId: string): Promise<ProjectDto>;
+  getProjectReadModel(projectId: string): Promise<ProjectReadModelDto>;
   getProjects(): Promise<ProjectSummaryDto[]>;
   saveProject(projectId: string, project: ProjectDto): Promise<ProjectDto>;
   importProject(request: ImportProjectRequestDto): Promise<ImportProjectResultDto>;
@@ -33,21 +35,23 @@ export function createProjectApi(client: HttpClient = httpClient): ProjectApi {
       normalizeProjectDto(
         await client.get<ProjectDto>(`/projects/${encodeURIComponent(projectId)}`),
       ),
+    getProjectReadModel: (projectId) =>
+      client.get(`/projects/${encodeURIComponent(projectId)}/read-model`),
     getProjects: () => client.get('/projects'),
     saveProject: (projectId, project) =>
       client
-        .put<ProjectDto, ProjectDto>(
-          `/projects/${encodeURIComponent(projectId)}`,
-          toBackendProjectDto(project),
-        )
+        .put<
+          ProjectDto,
+          ProjectDto
+        >(`/projects/${encodeURIComponent(projectId)}`, toBackendProjectDto(project))
         .then(normalizeProjectDto),
     importProject: (request) => client.post('/projects/import', request),
     applyModelText: (projectId, request) =>
       client
-        .post<ApplyModelTextResponseDto, ApplyModelTextRequestDto>(
-          `/projects/${encodeURIComponent(projectId)}/model-text/apply`,
-          request,
-        )
+        .post<
+          ApplyModelTextResponseDto,
+          ApplyModelTextRequestDto
+        >(`/projects/${encodeURIComponent(projectId)}/model-text/apply`, request)
         .then((response) => ({
           ...response,
           project: normalizeProjectDto(response.project),

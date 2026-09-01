@@ -1,39 +1,40 @@
 import { useMemo, useState, type ReactNode } from 'react';
 
-import { umlApi } from '../../../api';
+import { ApiClientError } from '../../../api/client/apiError';
+import { modelCommandApi, umlApi } from '../../../api';
 import type {
+  ClassProjectionDto,
   ProjectDto,
+  ProjectReadModelDto,
   UmlAssociationDto,
   UmlClassDto,
   UmlInvariantDto,
+  UmlVisibilityDto,
 } from '../../../api/dtos';
 import { DeleteActionButton } from '../../../components/DeleteActionButton';
 import { deleteProjectElementAndSync } from '../../delete/projectDeletion';
 import { appStoreActions } from '../../../state';
 import { formatMultiplicity } from '../../diagram-core';
 import { syncProjectChange } from '../../project-sync/syncProjectChange';
-import {
-  addAttribute,
-  addOperation,
-  updateAssociation,
-  updateAssociationEnd,
-  updateAttribute,
-  updateClass,
-  updateInvariant,
-  updateOperation,
-} from './projectUpdates';
-import { parseMultiplicity } from './multiplicity';
+import { updateClass } from './projectUpdates';
+import { AttributePropertiesSection } from './AttributePropertiesSection';
+import { DefinitionPropertiesSection } from './DefinitionPropertiesSection';
+import { OperationPropertiesSection } from './OperationPropertiesSection';
 
 interface ClassPropertiesPanelProps {
   project: ProjectDto;
   umlClass: UmlClassDto;
   onProjectChange: (project: ProjectDto) => void;
+  readModel?: ProjectReadModelDto | null;
+  onRefreshProject?: () => Promise<boolean>;
 }
 
 export function ClassPropertiesPanel({
   project,
   umlClass,
   onProjectChange,
+  readModel,
+  onRefreshProject = async () => true,
 }: ClassPropertiesPanelProps) {
   const [activeTab, setActiveTab] = useState<'class' | 'associations' | 'invariants'>('class');
   const nameError = umlClass.name.trim() ? null : 'Class name is required.';
@@ -91,6 +92,8 @@ export function ClassPropertiesPanel({
           project={project}
           umlClass={umlClass}
           nameError={nameError}
+          readModel={readModel}
+          onRefreshProject={onRefreshProject}
           onProjectChange={onProjectChange}
         />
       ) : null}
@@ -100,16 +103,13 @@ export function ClassPropertiesPanel({
           project={project}
           umlClass={umlClass}
           associations={relatedAssociations}
-          onProjectChange={onProjectChange}
         />
       ) : null}
 
       {activeTab === 'invariants' ? (
         <ClassInvariantAccess
-          project={project}
           umlClass={umlClass}
           invariants={relatedInvariants}
-          onProjectChange={onProjectChange}
         />
       ) : null}
     </div>
@@ -121,7 +121,10 @@ function ClassGeneralProperties({
   umlClass,
   nameError,
   onProjectChange,
+  readModel,
+  onRefreshProject = async () => true,
 }: ClassPropertiesPanelProps & { nameError: string | null }) {
+  const projection = readModel?.classes.find((candidate) => candidate.id === umlClass.id);
   return (
     <>
       <PropertyTextField label="Class ID" value={umlClass.id} readOnly />
@@ -142,6 +145,41 @@ function ClassGeneralProperties({
           })
         }
       />
+      <PropertyTextField
+        label="Qualified Name"
+        value={projection?.qualifiedName ?? umlClass.qualifiedName ?? umlClass.name}
+        readOnly
+      />
+      <VisibilitySelect
+        label="Class Visibility"
+        value={umlClass.visibility ?? 'PUBLIC'}
+        onChange={(visibility) =>
+          syncProjectChange({
+            projectId: project.project.id,
+            nextProject: updateClass(project, umlClass.id, (current) => ({ ...current, visibility })),
+            onProjectChange,
+            successMessage: `Visibility of "${umlClass.name}" saved.`,
+          })
+        }
+      />
+      <label className="property-field">
+        <span>Package / Namespace</span>
+        <select
+          value={umlClass.packageId ?? ''}
+          onChange={(event) => {
+            const packageId = event.target.value || null;
+            void syncProjectChange({
+              projectId: project.project.id,
+              nextProject: updateClass(project, umlClass.id, (current) => ({ ...current, packageId })),
+              onProjectChange,
+              successMessage: `Namespace of "${umlClass.name}" saved.`,
+            });
+          }}
+        >
+          <option value="">Project root</option>
+          {(project.umlModel.packages ?? []).map((item) => <option key={item.id} value={item.id}>{item.qualifiedName}</option>)}
+        </select>
+      </label>
       <DeleteActionButton
         label="Delete Class"
         confirmMessage={`Delete class "${umlClass.name}"? Dependent associations, invariants, objects, links, layout entries and validation markers may be removed by the backend.`}
@@ -157,140 +195,187 @@ function ClassGeneralProperties({
 
       <PropertySection
         title="Attributes"
-        actionLabel="Add Attribute"
-        onAction={() => {
-          const result = addAttribute(project, umlClass.id);
-          syncProjectChange({
-            projectId: project.project.id,
-            nextProject: result.project,
-            onProjectChange,
-            successMessage: `Attribute added to "${umlClass.name}".`,
-          });
-        }}
       >
-        {umlClass.attributes.length === 0 ? (
-          <p className="property-empty">No attributes defined.</p>
-        ) : (
-          umlClass.attributes.map((attribute) => (
-            <div key={attribute.id} className="property-row-with-action">
-              <div className="property-row-grid">
-                <PropertyTextField
-                  label="Name"
-                  value={attribute.name}
-                  error={attribute.name.trim() ? null : 'Required'}
-                  onChange={(name) => {
-                    onProjectChange(updateAttribute(project, umlClass.id, attribute.id, { name }));
-                    appStoreActions.markValidationStale();
-                  }}
-                  onCommit={(name) =>
-                    syncProjectChange({
-                      projectId: project.project.id,
-                      nextProject: updateAttribute(project, umlClass.id, attribute.id, { name }),
-                      onProjectChange,
-                      successMessage: `Attribute "${name}" saved.`,
-                    })
-                  }
-                />
-                <TypeSelect
-                  label="Type"
-                  value={attribute.type}
-                  onChange={(type) =>
-                    syncProjectChange({
-                      projectId: project.project.id,
-                      nextProject: updateAttribute(project, umlClass.id, attribute.id, { type }),
-                      onProjectChange,
-                      successMessage: `Attribute "${attribute.name}" saved.`,
-                    })
-                  }
-                />
-              </div>
-              <DeleteActionButton
-                label="Delete Attribute"
-                confirmMessage={`Delete attribute "${attribute.name}" from class "${umlClass.name}"? Matching slots and validation markers may be removed by the backend.`}
-                onDelete={() =>
-                  deleteProjectElementAndSync({
-                    project,
-                    deleteRequest: () =>
-                      umlApi.deleteAttribute(project.project.id, umlClass.id, attribute.id),
-                    onProjectChange,
-                    successMessage: `Attribute "${attribute.name}" deleted.`,
-                  }).then(() => undefined)
-                }
-              />
-            </div>
-          ))
-        )}
+        <AttributePropertiesSection project={project} umlClass={umlClass} revision={readModel?.readVersion ?? ''} onRefreshProject={onRefreshProject} />
       </PropertySection>
 
       <PropertySection
         title="Operations"
-        actionLabel="Add Operation"
-        onAction={() => {
-          const result = addOperation(project, umlClass.id);
-          syncProjectChange({
-            projectId: project.project.id,
-            nextProject: result.project,
-            onProjectChange,
-            successMessage: `Operation added to "${umlClass.name}".`,
-          });
-        }}
       >
-        {umlClass.operations.length === 0 ? (
-          <p className="property-empty">No operations defined.</p>
-        ) : (
-          umlClass.operations.map((operation) => (
-            <div key={operation.id} className="property-row-with-action">
-              <div className="property-row-grid">
-                <PropertyTextField
-                  label="Name"
-                  value={operation.name}
-                  error={operation.name.trim() ? null : 'Required'}
-                  onChange={(name) => {
-                    onProjectChange(updateOperation(project, umlClass.id, operation.id, { name }));
-                    appStoreActions.markValidationStale();
-                  }}
-                  onCommit={(name) =>
-                    syncProjectChange({
-                      projectId: project.project.id,
-                      nextProject: updateOperation(project, umlClass.id, operation.id, { name }),
-                      onProjectChange,
-                      successMessage: `Operation "${name}" saved.`,
-                    })
-                  }
-                />
-                <TypeSelect
-                  label="Return"
-                  value={operation.returnType}
-                  onChange={(returnType) =>
-                    syncProjectChange({
-                      projectId: project.project.id,
-                      nextProject: updateOperation(project, umlClass.id, operation.id, {
-                        returnType,
-                      }),
-                      onProjectChange,
-                      successMessage: `Operation "${operation.name}" saved.`,
-                    })
-                  }
-                />
-              </div>
-              <DeleteActionButton
-                label="Delete Operation"
-                confirmMessage={`Delete operation "${operation.name}" from class "${umlClass.name}"?`}
-                onDelete={() =>
-                  deleteProjectElementAndSync({
-                    project,
-                    deleteRequest: () =>
-                      umlApi.deleteOperation(project.project.id, umlClass.id, operation.id),
-                    onProjectChange,
-                    successMessage: `Operation "${operation.name}" deleted.`,
-                  }).then(() => undefined)
-                }
-              />
-            </div>
-          ))
-        )}
+        <OperationPropertiesSection
+          project={project}
+          umlClass={umlClass}
+          revision={readModel?.readVersion ?? ''}
+          onRefreshProject={onRefreshProject}
+        />
+      </PropertySection>
+
+      <GeneralizationsSection
+        project={project}
+        umlClass={umlClass}
+        projection={projection}
+        revision={readModel?.readVersion}
+        onRefreshProject={onRefreshProject}
+      />
+
+      <PropertySection title="Definitions">
+        <DefinitionPropertiesSection project={project} ownerKind="CLASS" ownerId={umlClass.id} ownerName={projection?.qualifiedName ?? umlClass.qualifiedName ?? umlClass.name} revision={readModel?.readVersion ?? ''} onRefreshProject={onRefreshProject} />
       </PropertySection>
     </>
+  );
+}
+
+function GeneralizationsSection({
+  project,
+  umlClass,
+  projection,
+  revision,
+  onRefreshProject,
+}: {
+  project: ProjectDto;
+  umlClass: UmlClassDto;
+  projection?: ClassProjectionDto;
+  revision?: string;
+  onRefreshProject: () => Promise<boolean>;
+}) {
+  const directIds = projection?.directSuperClasses.map((type) => type.id) ?? umlClass.superClassIds ?? [];
+  const candidates = project.umlModel.classes.filter(
+    (candidate) => candidate.id !== umlClass.id && !directIds.includes(candidate.id),
+  );
+  const localFeatures = [...(projection?.attributes ?? []), ...(projection?.operations ?? [])].filter(
+    (feature) => !feature.inherited,
+  );
+  const inheritedFeatures = [...(projection?.attributes ?? []), ...(projection?.operations ?? [])].filter(
+    (feature) => feature.inherited,
+  );
+  const [candidateId, setCandidateId] = useState(candidates[0]?.id ?? '');
+  const [localFeatureId, setLocalFeatureId] = useState(localFeatures[0]?.id ?? '');
+  const [targetFeatureId, setTargetFeatureId] = useState(inheritedFeatures[0]?.id ?? '');
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+
+  const run = async (command: () => Promise<unknown>, success: string) => {
+    if (!revision) {
+      setFeedback({ kind: 'error', text: 'The model revision is not available. Refresh the project.' });
+      return;
+    }
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await command();
+      await onRefreshProject();
+      setFeedback({ kind: 'success', text: success });
+    } catch (error) {
+      const message = error instanceof ApiClientError
+        ? `${error.dto.userMessage ?? error.message} (${error.dto.code})`
+        : 'The hierarchy change could not be saved.';
+      setFeedback({ kind: 'error', text: message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <PropertySection title="Generalizations">
+      <label className="property-checkbox">
+        <input
+          type="checkbox"
+          checked={projection?.abstractClass ?? umlClass.abstract ?? false}
+          disabled={busy || !revision}
+          onChange={(event) => {
+            const abstractClass = event.target.checked;
+            void run(
+              () => modelCommandApi.updateClass(project.project.id, umlClass.id, {
+                expectedRevision: revision ?? '',
+                draft: {
+                  ...umlClass,
+                  abstractClass,
+                  superClassIds: directIds,
+                  visibility: 'PUBLIC',
+                  qualifiedName: projection?.qualifiedName ?? umlClass.name,
+                },
+              }),
+              abstractClass ? 'Class marked as abstract.' : 'Class marked as concrete.',
+            );
+          }}
+        />
+        Abstract class
+      </label>
+
+      <div className="generalization-chain" aria-label="Inheritance chain">
+        <strong>{umlClass.name}</strong>
+        {(projection?.generalizationOrder ?? []).map((type) => (
+          <span key={type.id}>→ {type.name}</span>
+        ))}
+      </div>
+
+      <h5>Current direct supertypes</h5>
+      {directIds.length === 0 ? <p className="property-empty">No direct supertypes.</p> : null}
+      {(projection?.directSuperClasses ?? []).map((type) => (
+        <div className="generalization-row" key={type.id}>
+          <button type="button" onClick={() => appStoreActions.select({ view: 'class-diagram', type: 'class', id: type.id })}>
+            {type.name}
+          </button>
+          <DeleteActionButton
+            label="Delete generalization"
+            confirmMessage={`Delete the generalization from ${umlClass.name} to ${type.name}?`}
+            onDelete={() => run(
+              () => modelCommandApi.setGeneralizations(project.project.id, umlClass.id, {
+                expectedRevision: revision ?? '',
+                draft: { supertypeIds: directIds.filter((id) => id !== type.id) },
+              }),
+              `Generalization to ${type.name} deleted.`,
+            )}
+          />
+        </div>
+      ))}
+
+      <div className="property-inline-command">
+        <label><span>Superclass candidate</span><select value={candidateId} onChange={(event) => setCandidateId(event.target.value)}>
+          {candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+        </select></label>
+        <button type="button" disabled={!candidateId || busy || !revision} onClick={() => void run(
+          () => modelCommandApi.setGeneralizations(project.project.id, umlClass.id, {
+            expectedRevision: revision ?? '', draft: { supertypeIds: [...directIds, candidateId] },
+          }),
+          'Generalization added.',
+        )}>Add supertype</button>
+      </div>
+
+      <h5>Inherited features</h5>
+      {inheritedFeatures.length === 0 ? <p className="property-empty">No inherited features.</p> : inheritedFeatures.map((feature) => (
+        <div className="inherited-feature" key={`${feature.kind}-${feature.id}`}>
+          <strong>{feature.name} : {feature.type}</strong>
+          <span>Inherited from {feature.definingClassifier.name} · read-only</span>
+        </div>
+      ))}
+
+      {localFeatures.length > 0 && inheritedFeatures.length > 0 ? (
+        <div className="property-redefinition">
+          <h5>Explicit redefinition</h5>
+          <label><span>Local feature</span><select value={localFeatureId} onChange={(event) => setLocalFeatureId(event.target.value)}>
+            {localFeatures.map((feature) => <option key={feature.id} value={feature.id}>{feature.name} ({feature.kind})</option>)}
+          </select></label>
+          <label><span>Inherited target</span><select value={targetFeatureId} onChange={(event) => setTargetFeatureId(event.target.value)}>
+            {inheritedFeatures.map((feature) => <option key={feature.id} value={feature.id}>{feature.definingClassifier.name}::{feature.name}</option>)}
+          </select></label>
+          <button type="button" disabled={busy || !revision || !localFeatureId || !targetFeatureId} onClick={() => {
+            const local = localFeatures.find((feature) => feature.id === localFeatureId);
+            void run(() => modelCommandApi.setRedefinition(project.project.id, umlClass.id, {
+              expectedRevision: revision ?? '',
+              draft: {
+                featureKind: local?.kind === 'OPERATION' ? 'OPERATION' : 'ATTRIBUTE',
+                localFeatureId,
+                redefinedFeatureIds: [targetFeatureId],
+              },
+            }), 'Explicit redefinition saved.');
+          }}>Confirm redefinition</button>
+          <p className="property-hint">The backend validates ownership and compatibility. Equal names alone do not create a redefinition.</p>
+        </div>
+      ) : null}
+
+      {feedback ? <p role={feedback.kind === 'error' ? 'alert' : 'status'} className={`property-feedback ${feedback.kind}`}>{feedback.text}</p> : null}
+    </PropertySection>
   );
 }
 
@@ -298,12 +383,10 @@ function ClassAssociationAccess({
   project,
   umlClass,
   associations,
-  onProjectChange,
 }: {
   project: ProjectDto;
   umlClass: UmlClassDto;
   associations: UmlAssociationDto[];
-  onProjectChange: (project: ProjectDto) => void;
 }) {
   return (
     <PropertySection
@@ -325,7 +408,6 @@ function ClassAssociationAccess({
               key={association.id}
               project={project}
               association={association}
-              onProjectChange={onProjectChange}
             />
           ))}
         </div>
@@ -335,15 +417,11 @@ function ClassAssociationAccess({
 }
 
 function ClassInvariantAccess({
-  project,
   umlClass,
   invariants,
-  onProjectChange,
 }: {
-  project: ProjectDto;
   umlClass: UmlClassDto;
   invariants: UmlInvariantDto[];
-  onProjectChange: (project: ProjectDto) => void;
 }) {
   return (
     <PropertySection
@@ -361,12 +439,7 @@ function ClassInvariantAccess({
       ) : (
         <div className="property-related-list">
           {invariants.map((invariant) => (
-            <EditableInvariantSummary
-              key={invariant.id}
-              project={project}
-              invariant={invariant}
-              onProjectChange={onProjectChange}
-            />
+            <InvariantSummary key={invariant.id} invariant={invariant} />
           ))}
         </div>
       )}
@@ -377,11 +450,9 @@ function ClassInvariantAccess({
 function EditableAssociationSummary({
   project,
   association,
-  onProjectChange,
 }: {
   project: ProjectDto;
   association: UmlAssociationDto;
-  onProjectChange: (project: ProjectDto) => void;
 }) {
   return (
     <div className="property-related-editor">
@@ -399,108 +470,12 @@ function EditableAssociationSummary({
         <strong>{association.name || '<unnamed association>'}</strong>
         <span>{formatAssociationSummary(project, association)}</span>
       </button>
-      <PropertyTextField
-        label="Association Name"
-        value={association.name}
-        error={association.name.trim() ? null : 'Required'}
-        onChange={(name) => {
-          onProjectChange(
-            updateAssociation(project, association.id, (current) => ({ ...current, name })),
-          );
-          appStoreActions.markValidationStale();
-        }}
-        onCommit={(name) =>
-          syncProjectChange({
-            projectId: project.project.id,
-            nextProject: updateAssociation(project, association.id, (current) => ({
-              ...current,
-              name,
-            })),
-            onProjectChange,
-            successMessage: `Association "${name}" saved.`,
-          })
-        }
-      />
-      <div className="property-row-grid">
-        {association.ends.map((end, index) => (
-          <div key={end.id} className="property-nested-group">
-            <strong>{index === 0 ? 'Source End' : 'Target End'}</strong>
-            <PropertyTextField label="Class" value={findClassName(project, end.classId)} readOnly />
-            <PropertyTextField
-              label="Role"
-              value={end.roleName}
-              error={end.roleName.trim() ? null : 'Required'}
-              onChange={(roleName) => {
-                onProjectChange(
-                  updateAssociationEnd(project, association.id, end.id, { roleName }),
-                );
-                appStoreActions.markValidationStale();
-              }}
-              onCommit={(roleName) =>
-                syncProjectChange({
-                  projectId: project.project.id,
-                  nextProject: updateAssociationEnd(project, association.id, end.id, {
-                    roleName,
-                  }),
-                  onProjectChange,
-                  successMessage: `Association role "${roleName}" saved.`,
-                })
-              }
-            />
-            <PropertyTextField
-              label="Multiplicity"
-              value={formatMultiplicity(end.multiplicity)}
-              onChange={(raw) => {
-                const multiplicity = parseMultiplicity(raw);
-                if (multiplicity) {
-                  onProjectChange(
-                    updateAssociationEnd(project, association.id, end.id, { multiplicity }),
-                  );
-                  appStoreActions.markValidationStale();
-                }
-              }}
-              onCommit={(raw) => {
-                const multiplicity = parseMultiplicity(raw);
-                if (multiplicity) {
-                  syncProjectChange({
-                    projectId: project.project.id,
-                    nextProject: updateAssociationEnd(project, association.id, end.id, {
-                      multiplicity,
-                    }),
-                    onProjectChange,
-                    successMessage: `Association multiplicity "${raw}" saved.`,
-                  });
-                }
-              }}
-            />
-          </div>
-        ))}
-      </div>
-      <DeleteActionButton
-        label="Delete Association"
-        confirmMessage={`Delete association "${association.name}"? Matching object links, layout entries and validation markers may be removed by the backend.`}
-        onDelete={() =>
-          deleteProjectElementAndSync({
-            project,
-            deleteRequest: () => umlApi.deleteAssociation(project.project.id, association.id),
-            onProjectChange,
-            successMessage: `Association "${association.name}" deleted.`,
-          }).then(() => undefined)
-        }
-      />
+      <p className="property-hint">Open the association to edit or delete it through the revision-protected Association Properties workflow.</p>
     </div>
   );
 }
 
-function EditableInvariantSummary({
-  project,
-  invariant,
-  onProjectChange,
-}: {
-  project: ProjectDto;
-  invariant: UmlInvariantDto;
-  onProjectChange: (project: ProjectDto) => void;
-}) {
+function InvariantSummary({ invariant }: { invariant: UmlInvariantDto }) {
   return (
     <div className="property-related-editor">
       <button
@@ -517,64 +492,7 @@ function EditableInvariantSummary({
         <strong>{invariant.name || '<unnamed invariant>'}</strong>
         <span>{invariant.expression || '<empty OCL expression>'}</span>
       </button>
-      <PropertyTextField
-        label="Invariant Name"
-        value={invariant.name}
-        error={invariant.name.trim() ? null : 'Required'}
-        onChange={(name) => {
-          onProjectChange(updateInvariant(project, invariant.id, { name }));
-          appStoreActions.markValidationStale();
-        }}
-        onCommit={(name) =>
-          syncProjectChange({
-            projectId: project.project.id,
-            nextProject: updateInvariant(project, invariant.id, { name }),
-            onProjectChange,
-            successMessage: `Invariant "${name}" saved.`,
-          })
-        }
-      />
-      <label className="property-field">
-        <span>OCL Expression</span>
-        <textarea
-          value={invariant.expression}
-          rows={4}
-          aria-invalid={invariant.expression.trim() ? undefined : true}
-          onChange={(event) => {
-            onProjectChange(
-              updateInvariant(project, invariant.id, {
-                expression: event.target.value,
-              }),
-            );
-            appStoreActions.markValidationStale();
-          }}
-          onBlur={(event) =>
-            syncProjectChange({
-              projectId: project.project.id,
-              nextProject: updateInvariant(project, invariant.id, {
-                expression: event.target.value,
-              }),
-              onProjectChange,
-              successMessage: `Invariant "${invariant.name}" saved.`,
-            })
-          }
-        />
-        {invariant.expression.trim() ? null : (
-          <small className="property-field-error">OCL expression is required.</small>
-        )}
-      </label>
-      <DeleteActionButton
-        label="Delete Invariant"
-        confirmMessage={`Delete invariant "${invariant.name}"? Related validation results will be cleared from the UI.`}
-        onDelete={() =>
-          deleteProjectElementAndSync({
-            project,
-            deleteRequest: () => umlApi.deleteInvariant(project.project.id, invariant.id),
-            onProjectChange,
-            successMessage: `Invariant "${invariant.name}" deleted.`,
-          }).then(() => undefined)
-        }
-      />
+      <p className="property-hint">Open the invariant to edit or delete it through the revision-protected Invariant Properties workflow.</p>
     </div>
   );
 }
@@ -645,6 +563,23 @@ export function TypeSelect({ label, value, onChange }: TypeSelectProps) {
             {option}
           </option>
         ))}
+      </select>
+    </label>
+  );
+}
+
+function VisibilitySelect({ label, value, onChange }: { label: string; value: UmlVisibilityDto; onChange: (value: UmlVisibilityDto) => void }) {
+  const options: Array<{ value: UmlVisibilityDto; label: string }> = [
+    { value: 'PUBLIC', label: '+ public' },
+    { value: 'PRIVATE', label: '- private' },
+    { value: 'PROTECTED', label: '# protected' },
+    { value: 'PACKAGE', label: '~ package' },
+  ];
+  return (
+    <label className="property-field">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value as UmlVisibilityDto)}>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
   );

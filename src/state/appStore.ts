@@ -10,12 +10,18 @@ import type {
   ValidationErrorCodeDto,
   ValidationErrorDto,
   ValidationResultDto,
+  OperationInvocationResultDto,
 } from '../api/dtos';
 
 export type SelectionState =
   | {
       view: 'class-diagram';
-      type: 'class' | 'association' | 'invariant';
+      type: 'class' | 'association' | 'invariant' | 'package' | 'enumeration' | 'dataType';
+      id: Id;
+    }
+  | {
+      view: 'class-diagram';
+      type: 'import';
       id: Id;
     }
   | {
@@ -34,6 +40,20 @@ export type ModalState =
   | { type: 'addClass'; initialPosition?: { x: number; y: number } }
   | { type: 'addInvariant'; contextClassId?: Id }
   | { type: 'addClassAssociation'; sourceClassId?: Id; targetClassId?: Id }
+  | { type: 'addPackage' }
+  | { type: 'addImport' }
+  | { type: 'addEnumeration' }
+  | { type: 'addDataType' }
+  | {
+      type: 'deleteModelTypeElement';
+      targetKind: 'ENUMERATION' | 'ENUMERATION_LITERAL' | 'DATATYPE' | 'DATATYPE_PROPERTY';
+      elementId: Id;
+      elementName: string;
+      ownerId?: Id;
+      ownerName?: string;
+      position?: number;
+      total?: number;
+    }
   | { type: 'addObject'; classId?: Id }
   | {
       type: 'addObjectAssociation';
@@ -43,7 +63,11 @@ export type ModalState =
     }
   | null;
 
-export type BottomPanelTab = 'console' | 'validation-results';
+export type BottomPanelTab =
+  | 'console'
+  | 'diagnostics'
+  | 'validation-results'
+  | 'invocation-results';
 
 export interface ConsoleLogEntry {
   id: Id;
@@ -62,6 +86,8 @@ export interface ValidationMarker {
 
 export interface ValidationUiState {
   result: ValidationResultDto | null;
+  isLoading: boolean;
+  error: string | null;
   stale: boolean;
   selectedErrorId: Id | null;
   markersByElementId: Record<Id, ValidationMarker[]>;
@@ -81,6 +107,7 @@ export interface AppState {
   layoutDraft: LayoutDraftState;
   activeBottomPanelTab: BottomPanelTab;
   consoleLogs: ConsoleLogEntry[];
+  invocationResult: OperationInvocationResultDto | null;
 }
 
 const emptyDiagramLayout: DiagramLayoutDto = {
@@ -93,6 +120,8 @@ const initialState: AppState = {
   modal: null,
   validation: {
     result: null,
+    isLoading: false,
+    error: null,
     stale: false,
     selectedErrorId: null,
     markersByElementId: {},
@@ -104,6 +133,7 @@ const initialState: AppState = {
   },
   activeBottomPanelTab: 'console',
   consoleLogs: [],
+  invocationResult: null,
 };
 
 type Listener = () => void;
@@ -154,11 +184,7 @@ function collectValidationMarkers(
 
   const markersByElementId: Record<Id, ValidationMarker[]> = {};
   const markerKeysByElementId = new Map<Id, Set<string>>();
-  const allMessages = [
-    ...result.errors,
-    ...(result.warnings ?? []),
-    ...(result.infos ?? []),
-  ];
+  const allMessages = [...result.errors, ...(result.warnings ?? []), ...(result.infos ?? [])];
 
   for (const error of allMessages) {
     const directTargets = error.targets.map((target) => ({
@@ -176,9 +202,7 @@ function collectValidationMarkers(
       error.associationId
         ? { elementId: error.associationId, elementType: 'ASSOCIATION' as const }
         : null,
-      error.linkId
-        ? { elementId: error.linkId, elementType: 'OBJECT_LINK' as const }
-        : null,
+      error.linkId ? { elementId: error.linkId, elementType: 'OBJECT_LINK' as const } : null,
     ].filter(Boolean);
 
     for (const target of [...directTargets, ...inferredTargets]) {
@@ -193,8 +217,7 @@ function collectValidationMarkers(
         targetType: target.elementType,
       };
       const markerKey = `${marker.errorId}:${marker.targetType}`;
-      const existingMarkerKeys =
-        markerKeysByElementId.get(target.elementId) ?? new Set<string>();
+      const existingMarkerKeys = markerKeysByElementId.get(target.elementId) ?? new Set<string>();
 
       if (existingMarkerKeys.has(markerKey)) {
         continue;
@@ -223,9 +246,7 @@ function upsertNodeLayout(
     return [...nodes, { elementId, x: patch.x ?? 0, y: patch.y ?? 0, ...patch }];
   }
 
-  return nodes.map((node, index) =>
-    index === existingIndex ? { ...node, ...patch } : node,
-  );
+  return nodes.map((node, index) => (index === existingIndex ? { ...node, ...patch } : node));
 }
 
 function nowIsoString() {
@@ -257,10 +278,7 @@ function selectionsEqual(left: SelectionState, right: SelectionState) {
   return left.view === right.view && left.type === right.type && left.id === right.id;
 }
 
-function validationErrorReferencesAny(
-  error: ValidationErrorDto,
-  elementIds: Set<Id>,
-) {
+function validationErrorReferencesAny(error: ValidationErrorDto, elementIds: Set<Id>) {
   return [
     error.elementId,
     error.invariantId,
@@ -281,9 +299,7 @@ function removeValidationElementReferences(
     return null;
   }
 
-  const errors = result.errors.filter(
-    (error) => !validationErrorReferencesAny(error, elementIds),
-  );
+  const errors = result.errors.filter((error) => !validationErrorReferencesAny(error, elementIds));
   const warnings = (result.warnings ?? []).filter(
     (error) => !validationErrorReferencesAny(error, elementIds),
   );
@@ -339,8 +355,7 @@ export const appStoreActions = {
 
       return {
         ...state,
-        selection:
-          state.selection && ids.has(state.selection.id) ? null : state.selection,
+        selection: state.selection && ids.has(state.selection.id) ? null : state.selection,
         validation: {
           ...state.validation,
           result,
@@ -351,18 +366,12 @@ export const appStoreActions = {
           ...state.layoutDraft,
           classDiagram: {
             ...state.layoutDraft.classDiagram,
-            nodes: state.layoutDraft.classDiagram.nodes.filter(
-              (node) => !ids.has(node.elementId),
-            ),
-            edges: state.layoutDraft.classDiagram.edges?.filter(
-              (edge) => !ids.has(edge.elementId),
-            ),
+            nodes: state.layoutDraft.classDiagram.nodes.filter((node) => !ids.has(node.elementId)),
+            edges: state.layoutDraft.classDiagram.edges?.filter((edge) => !ids.has(edge.elementId)),
           },
           objectDiagram: {
             ...state.layoutDraft.objectDiagram,
-            nodes: state.layoutDraft.objectDiagram.nodes.filter(
-              (node) => !ids.has(node.elementId),
-            ),
+            nodes: state.layoutDraft.objectDiagram.nodes.filter((node) => !ids.has(node.elementId)),
             edges: state.layoutDraft.objectDiagram.edges?.filter(
               (edge) => !ids.has(edge.elementId),
             ),
@@ -390,12 +399,42 @@ export const appStoreActions = {
       activeBottomPanelTab: 'validation-results',
       validation: {
         result,
+        isLoading: false,
+        error: null,
         stale: false,
         selectedErrorId: null,
         markersByElementId: collectValidationMarkers(result),
-        lastCheckedAt: result.finishedAt ?? nowIsoString(),
+        lastCheckedAt: result.finishedAt ?? result.checkedAt ?? nowIsoString(),
       },
     }));
+  },
+
+  beginValidation() {
+    setAppState((state) => ({
+      ...state,
+      activeBottomPanelTab: 'validation-results',
+      validation: { ...state.validation, isLoading: true, error: null, stale: true },
+    }));
+  },
+
+  setValidationError(error: string) {
+    setAppState((state) => ({
+      ...state,
+      activeBottomPanelTab: 'validation-results',
+      validation: { ...state.validation, isLoading: false, error },
+    }));
+  },
+
+  setInvocationResult(result: OperationInvocationResultDto) {
+    setAppState((state) => ({
+      ...state,
+      activeBottomPanelTab: 'invocation-results',
+      invocationResult: result,
+    }));
+  },
+
+  clearInvocationResult() {
+    setAppState((state) => ({ ...state, invocationResult: null }));
   },
 
   markValidationStale() {
@@ -418,8 +457,7 @@ export const appStoreActions = {
     patch: Partial<Omit<NodeLayoutDto, 'elementId'>>,
   ) {
     setAppState((state) => {
-      const layoutKey =
-        diagram === 'class-diagram' ? 'classDiagram' : 'objectDiagram';
+      const layoutKey = diagram === 'class-diagram' ? 'classDiagram' : 'objectDiagram';
       const diagramLayout = state.layoutDraft[layoutKey];
 
       return {

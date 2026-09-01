@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type {
   ObjectInstanceDto,
@@ -6,9 +6,10 @@ import type {
   ProjectDto,
   UmlAttributeDto,
   UmlAssociationDto,
-  UmlTypeDto,
+  ProjectReadModelDto,
+  ValueProjectionDto,
 } from '../../../api/dtos';
-import { objectModelApi } from '../../../api';
+import { ApiClientError, objectModelApi, snapshotCommandApi } from '../../../api';
 import { DeleteActionButton } from '../../../components/DeleteActionButton';
 import { appStoreActions } from '../../../state';
 import { deleteProjectElementAndSync } from '../../delete/projectDeletion';
@@ -17,20 +18,28 @@ import {
   PropertySection,
   PropertyTextField,
 } from '../../class-diagram/properties/ClassPropertiesPanel';
-import { updateObject, updateSlotValueByAttribute } from '../objectDiagramUpdates';
+import { updateObject } from '../objectDiagramUpdates';
+import { OperationInvocationPanel } from './OperationInvocationPanel';
+import { TypeDirectedValueEditor } from './TypeDirectedValueEditor';
 
 interface ObjectPropertiesPanelProps {
   project: ProjectDto;
   object: ObjectInstanceDto;
   onProjectChange: (project: ProjectDto) => void;
+  readModel?: ProjectReadModelDto | null;
+  readVersion: string;
+  onRefreshProject: () => Promise<boolean>;
 }
 
 export function ObjectPropertiesPanel({
   project,
   object,
   onProjectChange,
+  readModel,
+  readVersion,
+  onRefreshProject,
 }: ObjectPropertiesPanelProps) {
-  const [activeTab, setActiveTab] = useState<'object' | 'associations'>('object');
+  const [activeTab, setActiveTab] = useState<'object' | 'associations' | 'operations'>('object');
   const umlClass = findClass(project, object.classId);
   const nameError = object.name.trim() ? null : 'Object name is required.';
   const relatedLinks = useMemo(
@@ -75,6 +84,15 @@ export function ObjectPropertiesPanel({
         >
           Associations
         </button>
+        <button
+          type="button"
+          className={activeTab === 'operations' ? 'active' : undefined}
+          role="tab"
+          aria-selected={activeTab === 'operations'}
+          onClick={() => setActiveTab('operations')}
+        >
+          Operations
+        </button>
       </div>
 
       {activeTab === 'object' ? (
@@ -83,6 +101,9 @@ export function ObjectPropertiesPanel({
           object={object}
           umlClass={umlClass}
           nameError={nameError}
+          readModel={readModel}
+          readVersion={readVersion}
+          onRefreshProject={onRefreshProject}
           onProjectChange={onProjectChange}
         />
       ) : null}
@@ -93,7 +114,16 @@ export function ObjectPropertiesPanel({
           object={object}
           links={relatedLinks}
           possibleAssociations={possibleAssociations}
-          onProjectChange={onProjectChange}
+        />
+      ) : null}
+
+      {activeTab === 'operations' ? (
+        <OperationInvocationPanel
+          project={project}
+          object={object}
+          readModel={readModel}
+          readVersion={readVersion}
+          onRefreshProject={onRefreshProject}
         />
       ) : null}
     </div>
@@ -105,10 +135,17 @@ function ObjectGeneralProperties({
   object,
   umlClass,
   nameError,
+  readModel,
   onProjectChange,
-}: ObjectPropertiesPanelProps & {
+  readVersion,
+  onRefreshProject,
+}: Pick<
+  ObjectPropertiesPanelProps,
+  'project' | 'object' | 'onProjectChange' | 'readVersion' | 'onRefreshProject'
+> & {
   umlClass: ReturnType<typeof findClass>;
   nameError: string | null;
+  readModel?: ProjectReadModelDto | null;
 }) {
   return (
     <>
@@ -168,15 +205,20 @@ function ObjectGeneralProperties({
         ) : umlClass.attributes.length === 0 ? (
           <p className="property-empty">No attributes defined for this class.</p>
         ) : (
-          umlClass.attributes.map((attribute) => (
-            <SlotValueEditor
-              key={attribute.id}
-              project={project}
-              object={object}
-              attribute={attribute}
-              onProjectChange={onProjectChange}
-            />
-          ))
+          umlClass.attributes
+            .filter((attribute) => !attribute.staticAttribute)
+            .map((attribute) => (
+              <SlotValueEditor
+                key={attribute.id}
+                project={project}
+                object={object}
+                attribute={attribute}
+                readModel={readModel}
+                readVersion={readVersion}
+                onRefreshProject={onRefreshProject}
+                onProjectChange={onProjectChange}
+              />
+            ))
         )}
       </PropertySection>
     </>
@@ -188,13 +230,11 @@ function ObjectAssociationAccess({
   object,
   links,
   possibleAssociations,
-  onProjectChange,
 }: {
   project: ProjectDto;
   object: ObjectInstanceDto;
   links: ObjectLinkDto[];
   possibleAssociations: UmlAssociationDto[];
-  onProjectChange: (project: ProjectDto) => void;
 }) {
   return (
     <PropertySection
@@ -207,9 +247,7 @@ function ObjectAssociationAccess({
       }
     >
       {possibleAssociations.length === 0 ? (
-        <p className="property-empty">
-          No class associations are available for this object type.
-        </p>
+        <p className="property-empty">No class associations are available for this object type.</p>
       ) : null}
 
       {links.length === 0 ? (
@@ -217,13 +255,7 @@ function ObjectAssociationAccess({
       ) : (
         <div className="property-related-list">
           {links.map((link) => (
-            <EditableObjectAssociationSummary
-              key={link.id}
-              project={project}
-              object={object}
-              link={link}
-              onProjectChange={onProjectChange}
-            />
+            <EditableObjectAssociationSummary key={link.id} project={project} link={link} />
           ))}
         </div>
       )}
@@ -233,14 +265,10 @@ function ObjectAssociationAccess({
 
 function EditableObjectAssociationSummary({
   project,
-  object,
   link,
-  onProjectChange,
 }: {
   project: ProjectDto;
-  object: ObjectInstanceDto;
   link: ObjectLinkDto;
-  onProjectChange: (project: ProjectDto) => void;
 }) {
   const association = project.umlModel.associations.find(
     (candidate) => candidate.id === link.associationId,
@@ -262,18 +290,9 @@ function EditableObjectAssociationSummary({
         <strong>{association?.name ?? link.associationId}</strong>
         <span>{formatObjectLinkSummary(project, link)}</span>
       </button>
-      <DeleteActionButton
-        label="Delete Link"
-        confirmMessage={`Delete object link "${formatObjectLinkSummary(project, link)}"? Related validation markers will be cleared from the UI.`}
-        onDelete={() =>
-          deleteProjectElementAndSync({
-            project,
-            deleteRequest: () => objectModelApi.deleteObjectLink(project.project.id, link.id),
-            onProjectChange,
-            successMessage: `Object link for "${object.name}" deleted.`,
-          }).then(() => undefined)
-        }
-      />
+      <span className="property-related-hint">
+        Select the link to edit assignments or inspect delete impact.
+      </span>
     </div>
   );
 }
@@ -282,6 +301,9 @@ interface SlotValueEditorProps {
   project: ProjectDto;
   object: ObjectInstanceDto;
   attribute: UmlAttributeDto;
+  readModel?: ProjectReadModelDto | null;
+  readVersion: string;
+  onRefreshProject: () => Promise<boolean>;
   onProjectChange: (project: ProjectDto) => void;
 }
 
@@ -289,126 +311,152 @@ function SlotValueEditor({
   project,
   object,
   attribute,
-  onProjectChange,
+  readModel,
+  readVersion,
+  onRefreshProject,
 }: SlotValueEditorProps) {
+  const projected = readModel?.objects
+    ?.find((candidate) => candidate.id === object.id)
+    ?.slots.find((candidate) => candidate.attributeId === attribute.id);
   const slot = object.slots.find((candidate) => candidate.attributeId === attribute.id);
-  const stringValue =
-    slot?.value === null || slot?.value === undefined ? '' : String(slot.value);
-  const typeError = validateSlotValue(attribute.type, stringValue);
+  const [draftValue, setDraftValue] = useState<unknown>(slot?.value ?? null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const [fieldPath, setFieldPath] = useState<string | null>(null);
+  useEffect(() => {
+    setDraftValue(slot?.value ?? null);
+    setMessage(null);
+    setFieldPath(null);
+  }, [slot?.id, slot?.value]);
 
-  if (attribute.type === 'Boolean') {
+  if (attribute.derived || projected?.derived) {
+    const status = projected?.valueStatus ?? projected?.value?.status ?? 'INVALID';
+    const rendered =
+      status === 'NULL'
+        ? 'null'
+        : status === 'INVALID'
+          ? 'invalid'
+          : formatProjectedValue(projected?.value);
     return (
-      <label className="property-field">
-        <span>{attribute.name}</span>
-        <select
-          value={slot?.value === true ? 'true' : slot?.value === false ? 'false' : ''}
-          onChange={(event) => {
-            const nextValue =
-              event.target.value === '' ? null : event.target.value === 'true';
-            syncProjectChange({
-              projectId: project.project.id,
-              nextProject: updateSlotValueByAttribute(project, object.id, attribute, {
-                value: nextValue,
-                valueType: attribute.type,
-                isUnset: event.target.value === '',
-              }),
-              onProjectChange,
-              successMessage: `Slot "${attribute.name}" saved.`,
-            });
-          }}
-        >
-          <option value="">Unset</option>
-          <option value="true">true</option>
-          <option value="false">false</option>
-        </select>
-      </label>
+      <div className="derived-slot-value" aria-label={`${attribute.name} derived value`}>
+        <span>
+          <strong>
+            /{attribute.name} : {attribute.type}
+          </strong>
+          <small>Calculated from the current snapshot · read-only</small>
+        </span>
+        <output className={`value-status value-status-${status.toLowerCase()}`}>{rendered}</output>
+        {projected?.diagnostics.map((diagnostic) => (
+          <small className="property-field-error" key={diagnostic.id}>
+            {diagnostic.userMessage ?? diagnostic.message}
+          </small>
+        ))}
+      </div>
     );
   }
 
+  const slotId = slot?.id ?? `slot-${attribute.id}`;
+  const save = async () => {
+    if (!readVersion || busy) return;
+    setBusy(true);
+    setMessage(null);
+    setFieldPath(null);
+    try {
+      const result = await snapshotCommandApi.updateSlot(project.project.id, object.id, slotId, {
+        expectedRevision: readVersion,
+        draft: {
+          id: slotId,
+          attributeId: attribute.id,
+          value: { type: attribute.type, value: draftValue },
+          valueType: attribute.type,
+          isUnset: draftValue === null,
+        },
+      });
+      if (!(await onRefreshProject()))
+        throw new Error('The authoritative slot projection could not be reloaded.');
+      setMessage({ kind: 'success', text: `Saved at snapshot revision ${result.revision}.` });
+    } catch (error) {
+      if (error instanceof ApiClientError)
+        setFieldPath(
+          typeof error.dto.details?.fieldPath === 'string' ? error.dto.details.fieldPath : null,
+        );
+      setMessage({
+        kind: 'error',
+        text:
+          error instanceof ApiClientError
+            ? `${error.dto.code}: ${error.dto.userMessage ?? error.dto.message}`
+            : error instanceof Error
+              ? error.message
+              : 'The slot command failed.',
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <PropertyTextField
-      label={`${attribute.name} : ${attribute.type}`}
-      value={stringValue}
-      error={typeError}
-      onChange={(value) => {
-        const parsedValue = parseSlotValue(attribute.type, value);
-
-        if (parsedValue.isValid) {
-          onProjectChange(
-            updateSlotValueByAttribute(project, object.id, attribute, {
-              value: parsedValue.value,
-              valueType: attribute.type,
-              isUnset: value.trim().length === 0,
-            }),
-          );
+    <div className="slot-value-command-editor" aria-busy={busy}>
+      <TypeDirectedValueEditor
+        project={project}
+        type={attribute.type}
+        value={draftValue}
+        label={attribute.name}
+        errorPath={fieldPath}
+        onChange={(value) => {
+          setDraftValue(value);
+          setMessage(null);
+          setFieldPath(null);
           appStoreActions.markValidationStale();
-        }
-      }}
-      onCommit={(value) => {
-        const parsedValue = parseSlotValue(attribute.type, value);
-
-        if (parsedValue.isValid) {
-          syncProjectChange({
-            projectId: project.project.id,
-            nextProject: updateSlotValueByAttribute(project, object.id, attribute, {
-              value: parsedValue.value,
-              valueType: attribute.type,
-              isUnset: value.trim().length === 0,
-            }),
-            onProjectChange,
-            successMessage: `Slot "${attribute.name}" saved.`,
-          });
-        }
-      }}
-    />
+        }}
+      />
+      {projected?.inherited ? (
+        <small>Inherited from {projected.definingClassifier.name}</small>
+      ) : null}
+      {message ? (
+        <p
+          className={`properties-message properties-message-${message.kind}`}
+          role={message.kind === 'error' ? 'alert' : 'status'}
+        >
+          {message.text}
+        </p>
+      ) : null}
+      <div className="properties-actions">
+        <button
+          type="button"
+          disabled={busy || Object.is(draftValue, slot?.value)}
+          onClick={() => setDraftValue(slot?.value ?? null)}
+        >
+          Discard
+        </button>
+        <button
+          type="button"
+          className="primary-button"
+          disabled={busy || !readVersion || Object.is(draftValue, slot?.value)}
+          onClick={() => void save()}
+        >
+          {busy ? 'Saving...' : 'Save Value'}
+        </button>
+      </div>
+    </div>
   );
 }
 
-function parseSlotValue(type: UmlTypeDto, rawValue: string) {
-  if (rawValue.trim().length === 0) {
-    return { isValid: true, value: null };
-  }
-
-  if (type === 'Integer') {
-    if (!/^-?\d+$/.test(rawValue.trim())) {
-      return { isValid: false, value: rawValue };
-    }
-
-    return { isValid: true, value: Number(rawValue) };
-  }
-
-  if (type === 'Real') {
-    const value = Number(rawValue);
-    return { isValid: Number.isFinite(value), value };
-  }
-
-  return { isValid: true, value: rawValue };
-}
-
-function validateSlotValue(type: UmlTypeDto, rawValue: string) {
-  if (rawValue.trim().length === 0) {
-    return null;
-  }
-
-  if (type === 'Integer' && !/^-?\d+$/.test(rawValue.trim())) {
-    return 'Enter an integer value.';
-  }
-
-  if (type === 'Real' && !Number.isFinite(Number(rawValue))) {
-    return 'Enter a numeric value.';
-  }
-
-  return null;
+function formatProjectedValue(value: ValueProjectionDto | null | undefined): string {
+  if (!value) return 'invalid';
+  if (value.scalar !== undefined && value.scalar !== null) return String(value.scalar);
+  if (value.elements)
+    return `[${value.elements.map((item) => formatProjectedValue(item)).join(', ')}]`;
+  if (value.fields)
+    return `{ ${Object.entries(value.fields)
+      .map(([name, item]) => `${name}: ${formatProjectedValue(item)}`)
+      .join(', ')} }`;
+  return value.status === 'NULL' ? 'null' : value.status === 'INVALID' ? 'invalid' : '';
 }
 
 function findClass(project: ProjectDto, classId: string) {
   return project.umlModel.classes.find((candidate) => candidate.id === classId);
 }
 
-function openAddAssociationForObject(
-  object: ObjectInstanceDto,
-  association: UmlAssociationDto,
-) {
+function openAddAssociationForObject(object: ObjectInstanceDto, association: UmlAssociationDto) {
   const [sourceEnd, targetEnd] = association.ends;
 
   appStoreActions.openModal({
@@ -431,8 +479,7 @@ function formatObjectLinkSummary(project: ProjectDto, link: ObjectLinkDto) {
   return association.ends
     .map((end) => {
       const linkedObjectId =
-        link.endValues.find((endValue) => endValue.associationEndId === end.id)
-          ?.objectId ?? '';
+        link.endValues.find((endValue) => endValue.associationEndId === end.id)?.objectId ?? '';
       const linkedObject = project.objectModel.objects.find(
         (candidate) => candidate.id === linkedObjectId,
       );

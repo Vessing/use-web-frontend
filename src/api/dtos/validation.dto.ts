@@ -37,12 +37,16 @@ export interface ValidationRequestDto {
 }
 
 export interface ValidationResultDto {
+  id?: Id;
+  projectId?: Id;
+  objectModelId?: Id;
   status: ValidationStatusDto;
   summary: ValidationSummaryDto;
   errors: ValidationErrorDto[];
   warnings?: ValidationErrorDto[];
   infos?: ValidationErrorDto[];
   startedAt?: string;
+  checkedAt?: string;
   finishedAt?: string;
 }
 

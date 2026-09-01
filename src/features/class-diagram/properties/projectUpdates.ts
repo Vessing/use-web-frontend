@@ -1,12 +1,8 @@
 import type {
   Id,
-  MultiplicityDto,
   ProjectDto,
-  UmlAssociationDto,
   UmlAttributeDto,
   UmlClassDto,
-  UmlInvariantDto,
-  UmlOperationDto,
   UmlTypeDto,
 } from '../../../api/dtos';
 
@@ -15,22 +11,8 @@ interface AddClassInput {
   attributes?: Array<{ name: string; type: UmlTypeDto }>;
   operations?: Array<{ name: string; returnType: UmlTypeDto }>;
   position?: { x: number; y: number };
-}
-
-interface AddAssociationInput {
-  name: string;
-  sourceClassId: Id;
-  sourceRoleName: string;
-  sourceMultiplicity: MultiplicityDto;
-  targetClassId: Id;
-  targetRoleName: string;
-  targetMultiplicity: MultiplicityDto;
-}
-
-interface AddInvariantInput {
-  name: string;
-  contextClassId: Id;
-  expression: string;
+  visibility?: UmlClassDto['visibility'];
+  packageId?: string | null;
 }
 
 interface AddElementResult {
@@ -98,100 +80,6 @@ export function addAttribute(
   };
 }
 
-export function updateOperation(
-  project: ProjectDto,
-  classId: string,
-  operationId: string,
-  patch: Partial<UmlOperationDto>,
-): ProjectDto {
-  return updateClass(project, classId, (umlClass) => ({
-    ...umlClass,
-    operations: umlClass.operations.map((operation) =>
-      operation.id === operationId ? { ...operation, ...patch } : operation,
-    ),
-  }));
-}
-
-export function addOperation(
-  project: ProjectDto,
-  classId: string,
-  input: { name?: string; returnType?: UmlTypeDto } = {},
-): AddElementResult {
-  const operationId = createModelId('op');
-
-  return {
-    createdId: operationId,
-    project: updateClass(
-      {
-        ...project,
-        project: touchProject(project),
-      },
-      classId,
-      (umlClass) => ({
-        ...umlClass,
-        operations: [
-          ...umlClass.operations,
-          {
-            id: operationId,
-            name: input.name ?? `operation${umlClass.operations.length + 1}`,
-            returnType: input.returnType ?? 'Boolean',
-            parameters: [],
-          },
-        ],
-      }),
-    ),
-  };
-}
-
-export function updateAssociation(
-  project: ProjectDto,
-  associationId: string,
-  updater: (association: UmlAssociationDto) => UmlAssociationDto,
-): ProjectDto {
-  return {
-    ...project,
-    umlModel: {
-      ...project.umlModel,
-      associations: project.umlModel.associations.map((association) =>
-        association.id === associationId ? updater(association) : association,
-      ),
-    },
-  };
-}
-
-export function updateAssociationEnd(
-  project: ProjectDto,
-  associationId: string,
-  endId: string,
-  patch: {
-    roleName?: string;
-    multiplicity?: MultiplicityDto;
-  },
-): ProjectDto {
-  return updateAssociation(project, associationId, (association) => ({
-    ...association,
-    ends: association.ends.map((end) =>
-      end.id === endId ? { ...end, ...patch } : end,
-    ),
-  }));
-}
-
-export function updateInvariant(
-  project: ProjectDto,
-  invariantId: string,
-  patch: Partial<UmlInvariantDto>,
-): ProjectDto {
-  return {
-    ...project,
-    umlModel: {
-      ...project.umlModel,
-      invariants: project.umlModel.invariants.map((invariant) =>
-        invariant.id === invariantId ? { ...invariant, ...patch } : invariant,
-      ),
-    },
-  };
-}
-
 export function addClass(project: ProjectDto, input: AddClassInput): AddElementResult {
   const classId = createModelId('class');
   const attributes = (input.attributes ?? []).map((attribute) => ({
@@ -220,6 +108,8 @@ export function addClass(project: ProjectDto, input: AddClassInput): AddElementR
             name: input.name.trim(),
             attributes,
             operations,
+            visibility: input.visibility ?? 'PUBLIC',
+            packageId: input.packageId ?? null,
           },
         ],
       },
@@ -237,76 +127,6 @@ export function addClass(project: ProjectDto, input: AddClassInput): AddElementR
           ],
         },
         updatedAt: nowIsoString(),
-      },
-    },
-  };
-}
-
-export function addAssociation(
-  project: ProjectDto,
-  input: AddAssociationInput,
-): AddElementResult {
-  const associationId = createModelId('assoc');
-
-  return {
-    createdId: associationId,
-    project: {
-      ...project,
-      project: touchProject(project),
-      umlModel: {
-        ...project.umlModel,
-        associations: [
-          ...project.umlModel.associations,
-          {
-            id: associationId,
-            name: input.name.trim(),
-            kind: 'association',
-            ends: [
-              {
-                id: createModelId('end'),
-                classId: input.sourceClassId,
-                roleName: input.sourceRoleName.trim(),
-                multiplicity: input.sourceMultiplicity,
-                navigable: true,
-              },
-              {
-                id: createModelId('end'),
-                classId: input.targetClassId,
-                roleName: input.targetRoleName.trim(),
-                multiplicity: input.targetMultiplicity,
-                navigable: true,
-              },
-            ],
-          },
-        ],
-      },
-    },
-  };
-}
-
-export function addInvariant(
-  project: ProjectDto,
-  input: AddInvariantInput,
-): AddElementResult {
-  const invariantId = createModelId('inv');
-
-  return {
-    createdId: invariantId,
-    project: {
-      ...project,
-      project: touchProject(project),
-      umlModel: {
-        ...project.umlModel,
-        invariants: [
-          ...project.umlModel.invariants,
-          {
-            id: invariantId,
-            name: input.name.trim(),
-            contextClassId: input.contextClassId,
-            expression: input.expression.trim(),
-            enabled: true,
-          },
-        ],
       },
     },
   };

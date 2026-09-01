@@ -3,6 +3,7 @@ import type { ObjectModelDto } from './object-model.dto';
 import type { UmlModelDto } from './uml.dto';
 import type { ApiErrorDto } from './error.dto';
 import type { OclDiagnosticDto } from './ocl.dto';
+import type { OclDefinitionElementDto } from './uml.dto';
 
 export interface ProjectDto {
   formatVersion: string;
@@ -13,6 +14,7 @@ export interface ProjectDto {
   layout: LayoutDto;
   validationState?: ValidationStateDto;
   extensions?: Record<string, unknown>;
+  definitions?: OclDefinitionElementDto[];
 }
 
 export interface ProjectMetadataDto {

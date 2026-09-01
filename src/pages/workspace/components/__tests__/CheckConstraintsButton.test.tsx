@@ -93,7 +93,8 @@ describe('CheckConstraintsButton', () => {
       expect(validateProject).toHaveBeenCalled();
     });
     expect(getAppState().validation.result).toBeNull();
-    expect(getAppState().activeBottomPanelTab).toBe('console');
+    expect(getAppState().activeBottomPanelTab).toBe('validation-results');
+    expect(getAppState().validation.error).toContain('Das Projekt konnte nicht gefunden werden.');
     expect(getAppState().consoleLogs.at(-1)).toMatchObject({
       level: 'error',
       source: 'api',

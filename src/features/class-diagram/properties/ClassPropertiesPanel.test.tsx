@@ -1,8 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ProjectDto } from '../../../api/dtos';
+import type { ProjectDto, ProjectReadModelDto } from '../../../api/dtos';
 import { appStoreActions, getAppState } from '../../../state';
 import { ClassPropertiesPanel } from './ClassPropertiesPanel';
 
@@ -35,22 +35,8 @@ describe('ClassPropertiesPanel', () => {
     expect(screen.getByRole('button', { name: /Borrows/ })).toHaveTextContent(
       'User.borrower [1] - Book.borrowedBooks [0..5]',
     );
-    expect(screen.getByRole('button', { name: 'Delete Association' })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Association Name'), {
-      target: { value: 'Loans' },
-    });
-    expect(onProjectChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        umlModel: expect.objectContaining({
-          associations: [
-            expect.objectContaining({
-              id: 'assoc-borrows',
-              name: 'Loans',
-            }),
-          ],
-        }),
-      }),
-    );
+    expect(screen.queryByRole('button', { name: 'Delete Association' })).not.toBeInTheDocument();
+    expect(screen.getByText(/revision-protected Association Properties workflow/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /Borrows/ }));
 
@@ -59,28 +45,15 @@ describe('ClassPropertiesPanel', () => {
       type: 'association',
       id: 'assoc-borrows',
     });
+    expect(onProjectChange).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole('tab', { name: 'Invariant' }));
 
     expect(screen.getByRole('button', { name: /maxBooks/ })).toHaveTextContent(
       'self.books <= 5',
     );
-    expect(screen.getByRole('button', { name: 'Delete Invariant' })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('OCL Expression'), {
-      target: { value: 'self.books < 10' },
-    });
-    expect(onProjectChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        umlModel: expect.objectContaining({
-          invariants: [
-            expect.objectContaining({
-              id: 'inv-max-books',
-              expression: 'self.books < 10',
-            }),
-          ],
-        }),
-      }),
-    );
+    expect(screen.queryByRole('button', { name: 'Delete Invariant' })).not.toBeInTheDocument();
+    expect(screen.getByText(/revision-protected Invariant Properties workflow/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /maxBooks/ }));
 
@@ -89,8 +62,64 @@ describe('ClassPropertiesPanel', () => {
       type: 'invariant',
       id: 'inv-max-books',
     });
+    expect(onProjectChange).not.toHaveBeenCalled();
+  });
+
+  it('shows backend-projected supertypes and inherited features as read-only', () => {
+    const project = createProject();
+    project.umlModel.classes[0].superClassIds = ['class-book'];
+
+    render(
+      <ClassPropertiesPanel
+        project={project}
+        umlClass={project.umlModel.classes[0]}
+        readModel={createReadModel()}
+        onProjectChange={vi.fn()}
+        onRefreshProject={vi.fn().mockResolvedValue(true)}
+      />,
+    );
+
+    expect(screen.getByText('Current direct supertypes')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Book' })).toBeInTheDocument();
+    expect(screen.getByText('title : String')).toBeInTheDocument();
+    expect(screen.getByText('Inherited from Book · read-only')).toBeInTheDocument();
   });
 });
+
+function createReadModel(): ProjectReadModelDto {
+  const book = { id: 'class-book', name: 'Book', qualifiedName: 'Book', kind: 'CLASS' };
+  return {
+    projectId: 'project-library',
+    modelId: 'model-library',
+    snapshotId: 'snapshot-current',
+    readVersion: 'revision-18',
+    capabilities: {},
+    explorer: [],
+    diagnostics: [],
+    classes: [{
+      id: 'class-user',
+      name: 'User',
+      qualifiedName: 'User',
+      abstractClass: false,
+      directSuperClasses: [book],
+      generalizationOrder: [book],
+      attributes: [{
+        id: 'attr-book-title',
+        name: 'title',
+        qualifiedName: 'Book::title',
+        kind: 'ATTRIBUTE',
+        type: 'String',
+        definingClassifier: book,
+        inherited: true,
+        derived: false,
+        readOnly: true,
+        staticFeature: false,
+        redefinedFeatures: [],
+      }],
+      operations: [],
+    }],
+  };
+}
 
 function createProject(): ProjectDto {
   return {

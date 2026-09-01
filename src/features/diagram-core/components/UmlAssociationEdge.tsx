@@ -6,7 +6,7 @@ import {
 } from '@xyflow/react';
 import type { ReactNode } from 'react';
 
-import type { UmlAssociationEdgeData } from '../types';
+import type { AssociationEndLabel, UmlAssociationEdgeData } from '../types';
 import { edgePoint } from './edgeLabelGeometry';
 
 export function UmlAssociationEdge(props: EdgeProps) {
@@ -62,18 +62,22 @@ export function UmlAssociationEdge(props: EdgeProps) {
           y={sourceLabel.y}
           className="edge-label edge-label-end"
         >
-          {data.sourceEnd.roleName} {data.sourceEnd.multiplicity}
+          {aggregationSymbol(data.sourceEnd.aggregationKind)}{data.sourceEnd.roleName} {data.sourceEnd.multiplicity}
         </AssociationLabel>
         <AssociationLabel
           x={targetLabel.x}
           y={targetLabel.y}
           className="edge-label edge-label-end"
         >
-          {data.targetEnd.roleName} {data.targetEnd.multiplicity}
+          {aggregationSymbol(data.targetEnd.aggregationKind)}{data.targetEnd.roleName} {data.targetEnd.multiplicity}
         </AssociationLabel>
       </EdgeLabelRenderer>
     </>
   );
+}
+
+function aggregationSymbol(kind?: AssociationEndLabel['aggregationKind']) {
+  return kind === 'COMPOSITE' ? '\u25c6 ' : kind === 'SHARED' ? '\u25c7 ' : '';
 }
 
 interface AssociationLabelProps {

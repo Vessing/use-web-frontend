@@ -36,6 +36,7 @@ describe('OclEditorView', () => {
         error={null}
         onProjectChange={onProjectChange}
         applyModelText={applyModelText}
+        loadComplianceProfile={loadProfile}
       />,
     );
 
@@ -90,6 +91,7 @@ describe('OclEditorView', () => {
         error={null}
         onProjectChange={() => undefined}
         applyModelText={applyModelText}
+        loadComplianceProfile={loadProfile}
       />,
     );
 
@@ -110,6 +112,7 @@ describe('OclEditorView', () => {
         isLoading={false}
         error={null}
         onProjectChange={onProjectChange}
+        loadComplianceProfile={loadProfile}
       />,
     );
 
@@ -140,6 +143,7 @@ describe('OclEditorView', () => {
         isLoading={false}
         error={null}
         onProjectChange={onProjectChange}
+        loadComplianceProfile={loadProfile}
       />,
     );
 
@@ -186,3 +190,13 @@ function createProject(): ProjectDto {
     },
   };
 }
+
+const loadProfile = async () => ({
+  profileId: 'test-profile',
+  oclVersion: '2.4',
+  complianceClaim: 'Test subset',
+  apiVersion: 'v1',
+  enabledOptionalCompliancePoints: [],
+  features: [{ id: 'OCL-PROFILE-001', group: 'Core', status: 'SUPPORTED' as const, standardBasis: 'Clause 8', notes: 'Supported in tests.' }],
+  runtimeLimits: { maxTokens: 10000 },
+});

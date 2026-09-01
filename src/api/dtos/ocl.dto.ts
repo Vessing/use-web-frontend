@@ -63,3 +63,27 @@ export interface OclDiagnosticDto {
   suggestedFix?: string | null;
   technicalDetails?: Record<string, unknown>;
 }
+
+export type OclFeatureStatusDto =
+  | 'SUPPORTED'
+  | 'PARTIAL'
+  | 'NOT_SUPPORTED'
+  | 'OUT_OF_SCOPE';
+
+export interface OclFeatureSupportDto {
+  id: string;
+  group: string;
+  status: OclFeatureStatusDto;
+  standardBasis: string;
+  notes: string;
+}
+
+export interface OclComplianceProfileDto {
+  profileId: string;
+  oclVersion: string;
+  complianceClaim: string;
+  apiVersion: string;
+  enabledOptionalCompliancePoints: string[];
+  features: OclFeatureSupportDto[];
+  runtimeLimits: Record<string, number>;
+}

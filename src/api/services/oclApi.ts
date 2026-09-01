@@ -2,6 +2,7 @@ import { httpClient, type HttpClient } from '../client/httpClient';
 import type {
   OclEvaluateRequestDto,
   OclEvaluateResponseDto,
+  OclComplianceProfileDto,
   OclParseRequestDto,
   OclParseResponseDto,
   OclTypecheckRequestDto,
@@ -10,6 +11,7 @@ import type {
 
 export function createOclApi(client: HttpClient = httpClient) {
   return {
+    getComplianceProfile: () => client.get<OclComplianceProfileDto>('/ocl/profile'),
     parseExpression: (projectId: string, request: OclParseRequestDto) =>
       client.post<OclParseResponseDto>(
         `/projects/${encodeURIComponent(projectId)}/ocl/parse`,

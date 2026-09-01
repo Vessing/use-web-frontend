@@ -1,4 +1,4 @@
-import type { ProjectDto } from '../../../api';
+import type { ProjectDto, ProjectReadModelDto } from '../../../api';
 import type { WorkspaceView } from '../../../app/navigation';
 import { ClassDiagramPropertiesPanel } from '../../../features/class-diagram';
 import { ObjectDiagramPropertiesPanel } from '../../../features/object-diagram';
@@ -7,13 +7,17 @@ import { useAppStore } from '../../../state';
 interface PropertiesPanelProps {
   activeView: WorkspaceView;
   project: ProjectDto | null;
+  readModel: ProjectReadModelDto | null;
   onProjectChange: (project: ProjectDto) => void;
+  onRefreshProject: () => Promise<boolean>;
 }
 
 export function PropertiesPanel({
   activeView,
   project,
+  readModel,
   onProjectChange,
+  onRefreshProject,
 }: PropertiesPanelProps) {
   const selection = useAppStore((state) => state.selection);
 
@@ -24,15 +28,20 @@ export function PropertiesPanel({
         {activeView === 'class-diagram' ? (
           <ClassDiagramPropertiesPanel
             project={project}
+            readModel={readModel}
             selection={selection}
             onProjectChange={onProjectChange}
+            onRefreshProject={onRefreshProject}
           />
         ) : null}
         {activeView === 'object-diagram' ? (
           <ObjectDiagramPropertiesPanel
             project={project}
+            readVersion={readModel?.readVersion ?? ''}
+            readModel={readModel}
             selection={selection}
             onProjectChange={onProjectChange}
+            onRefreshProject={onRefreshProject}
           />
         ) : null}
         {activeView === 'ocl' ? (

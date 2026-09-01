@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 
 import {
   projectApi,
+  oclApi,
+  type OclComplianceProfileDto,
   type ApplyModelTextResponseDto,
   type OclDiagnosticDto,
   type ProjectDto,
 } from '../../../api';
+import { useAppStore } from '../../../state';
 import { getEditableModelText, renderUseModelText } from '../modelText';
+import { OclComplianceProfile } from './OclComplianceProfile';
 
 interface OclEditorViewProps {
   projectId: string;
@@ -15,6 +19,7 @@ interface OclEditorViewProps {
   error: string | null;
   onProjectChange: (project: ProjectDto) => void;
   applyModelText?: typeof projectApi.applyModelText;
+  loadComplianceProfile?: () => Promise<OclComplianceProfileDto>;
 }
 
 export function OclEditorView({
@@ -24,6 +29,7 @@ export function OclEditorView({
   error,
   onProjectChange,
   applyModelText = projectApi.applyModelText,
+  loadComplianceProfile = oclApi.getComplianceProfile,
 }: OclEditorViewProps) {
   const [modelText, setModelText] = useState('');
   const [diagnostics, setDiagnostics] = useState<OclDiagnosticDto[]>([]);
@@ -32,8 +38,11 @@ export function OclEditorView({
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applySuccess, setApplySuccess] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [requestedFeatureId, setRequestedFeatureId] = useState<string | null>(null);
   const loadedProjectIdRef = useRef<string | null>(null);
   const modelSignatureRef = useRef<string | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const selection = useAppStore((state) => state.selection);
 
   useEffect(() => {
     const nextProjectId = project?.project.id ?? null;
@@ -62,7 +71,18 @@ export function OclEditorView({
     setApplySuccess(null);
     setIsDirty(false);
     setConsoleLines(project ? [`Loaded model text for ${project.project.name}.`] : []);
-  }, [project]);
+  }, [isDirty, project]);
+
+  useEffect(() => {
+    if (selection?.view !== 'ocl' || selection.type !== 'invariant' || !project) return;
+    const invariant = project.umlModel.invariants.find((candidate) => candidate.id === selection.id);
+    if (!invariant) return;
+    const start = modelText.indexOf(invariant.expression);
+    if (start < 0) return;
+    const editor = editorRef.current;
+    editor?.focus();
+    editor?.setSelectionRange(start, start + invariant.expression.length);
+  }, [modelText, project, selection]);
 
   if (isLoading) {
     return (
@@ -148,14 +168,21 @@ export function OclEditorView({
             Edit USE-style model text for classes, associations, invariants, and OCL expressions.
           </p>
         </div>
-        <button
-          type="button"
-          className="primary-button"
-          onClick={handleApply}
-          disabled={isApplying || modelText.trim().length === 0 || !isDirty}
-        >
-          {isApplying ? 'Applying...' : 'Apply Changes'}
-        </button>
+        <div className="ocl-editor-toolbar-actions">
+          <OclComplianceProfile
+            loadProfile={loadComplianceProfile}
+            requestedFeatureId={requestedFeatureId}
+            onRequestedFeatureHandled={() => setRequestedFeatureId(null)}
+          />
+          <button
+            type="button"
+            className="primary-button"
+            onClick={handleApply}
+            disabled={isApplying || modelText.trim().length === 0 || !isDirty}
+          >
+            {isApplying ? 'Applying...' : 'Apply Changes'}
+          </button>
+        </div>
       </div>
 
       {applyError ? (
@@ -177,6 +204,7 @@ export function OclEditorView({
           ))}
         </div>
         <textarea
+          ref={editorRef}
           aria-label="USE model text"
           className="ocl-editor-textarea"
           value={modelText}
@@ -199,6 +227,11 @@ export function OclEditorView({
               {diagnostics.map((diagnostic, index) => (
                 <li key={diagnostic.id ?? `${diagnostic.code}-${index}`}>
                   <strong>{diagnostic.severity}</strong> {diagnostic.code}: {diagnostic.message}
+                  {diagnosticFeatureId(diagnostic) ? (
+                    <button type="button" className="ocl-diagnostic-feature-link" onClick={() => setRequestedFeatureId(diagnosticFeatureId(diagnostic))}>
+                      View {diagnosticFeatureId(diagnostic)}
+                    </button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -215,6 +248,11 @@ export function OclEditorView({
       </div>
     </section>
   );
+}
+
+function diagnosticFeatureId(diagnostic: OclDiagnosticDto) {
+  const value = diagnostic.details?.featureId ?? diagnostic.technicalDetails?.featureId;
+  return typeof value === 'string' && value.trim() ? value : null;
 }
 
 function projectModelSignature(project: ProjectDto) {

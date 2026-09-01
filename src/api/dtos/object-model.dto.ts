@@ -19,7 +19,7 @@ export interface ObjectInstanceDto {
 export interface SlotDto {
   id: Id;
   attributeId: Id;
-  value: string | number | boolean | null;
+  value: unknown;
   valueType?: UmlTypeDto;
   isUnset?: boolean;
 }
@@ -29,11 +29,23 @@ export interface ObjectLinkDto {
   associationId: Id;
   endValues: ObjectLinkEndValueDto[];
   name?: string;
+  associationClassObjectId?: Id | null;
 }
 
 export interface ObjectLinkEndValueDto {
   associationEndId: Id;
   objectId: Id;
+  qualifierValues?: QualifierValueDto[];
+}
+
+export interface QualifierValueDto {
+  qualifierId: Id;
+  value: SlotValueDto;
+}
+
+export interface SlotValueDto {
+  type: string;
+  value: unknown;
 }
 
 export interface CreateObjectRequestDto {

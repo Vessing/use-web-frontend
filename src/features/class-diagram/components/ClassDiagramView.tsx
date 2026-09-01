@@ -19,7 +19,7 @@ export function ClassDiagramView({ project, isLoading, error }: ClassDiagramView
   const layoutDraft = useAppStore((state) => state.layoutDraft.classDiagram);
   const diagram = useMemo(
     () =>
-      project && project.umlModel.classes.length > 0
+      project && (project.umlModel.classes.length > 0 || (project.umlModel.enumerations?.length ?? 0) > 0 || (project.umlModel.dataTypes?.length ?? 0) > 0)
         ? mapProjectToClassDiagram(project, markersByElementId, selection, layoutDraft)
         : { nodes: [], edges: [] },
     [project, markersByElementId, selection, layoutDraft],
@@ -43,7 +43,7 @@ export function ClassDiagramView({ project, isLoading, error }: ClassDiagramView
     );
   }
 
-  if (!project || project.umlModel.classes.length === 0) {
+  if (!project || (project.umlModel.classes.length === 0 && !(project.umlModel.enumerations?.length) && !(project.umlModel.dataTypes?.length))) {
     return (
       <section className="canvas-placeholder" aria-label="Empty Class Diagram">
         <h2>Class Diagram</h2>

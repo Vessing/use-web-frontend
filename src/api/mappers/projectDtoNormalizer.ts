@@ -21,7 +21,8 @@ type BackendSlotDto = Omit<SlotDto, 'value'> & {
 };
 
 type BackendProjectDto = Omit<ProjectDto, 'umlModel' | 'objectModel'> & {
-  umlModel: Omit<ProjectDto['umlModel'], 'invariants'> & {
+  umlModel: Omit<ProjectDto['umlModel'], 'invariants' | 'classes'> & {
+    classes: Array<ProjectDto['umlModel']['classes'][number] & { abstractClass?: boolean }>;
     invariants: BackendInvariantDto[];
   };
   objectModel: Omit<ProjectDto['objectModel'], 'objects'> & {
@@ -38,8 +39,56 @@ export function normalizeProjectDto(project: ProjectDto): ProjectDto {
 
   return {
     ...project,
+    definitions: project.definitions ?? [],
     umlModel: {
       ...project.umlModel,
+      packages: backendProject.umlModel.packages ?? [],
+      imports: backendProject.umlModel.imports ?? [],
+      enumerations: backendProject.umlModel.enumerations ?? [],
+      dataTypes: backendProject.umlModel.dataTypes ?? [],
+      classes: (backendProject.umlModel.classes ?? []).map((umlClass) => ({
+        ...umlClass,
+        abstract: umlClass.abstractClass ?? umlClass.abstract ?? false,
+        superClassIds: umlClass.superClassIds ?? [],
+        visibility: umlClass.visibility ?? 'PUBLIC',
+        packageId: umlClass.packageId ?? null,
+        qualifiedName: umlClass.qualifiedName ?? umlClass.name,
+        attributes: (umlClass.attributes ?? []).map((attribute) => ({
+          ...attribute,
+          visibility: attribute.visibility ?? 'PUBLIC',
+        })),
+        operations: (umlClass.operations ?? []).map((operation) => ({
+          ...operation,
+          visibility: operation.visibility ?? 'PUBLIC',
+          query: operation.query ?? operation.isQuery ?? false,
+          abstractOperation: operation.abstractOperation ?? false,
+          staticOperation: operation.staticOperation ?? false,
+          parameters: (operation.parameters ?? [])
+            .map((parameter, index) => ({
+              ...parameter,
+              direction: (parameter.direction ?? 'IN').toUpperCase() as 'IN' | 'OUT' | 'INOUT',
+              position: parameter.position ?? index,
+            }))
+            .sort((left, right) => (left.position ?? 0) - (right.position ?? 0)),
+        })),
+      })),
+      associations: (backendProject.umlModel.associations ?? []).map((association) => ({
+        ...association,
+        associationClassId: association.associationClassId ?? null,
+        ends: (association.ends ?? []).map((end) => ({
+          ...end,
+          navigable: end.navigable ?? false,
+          ordered: end.ordered ?? false,
+          unique: end.unique ?? true,
+          derived: end.derived ?? false,
+          union: end.union ?? false,
+          subsettedEndIds: end.subsettedEndIds ?? [],
+          redefinedEndIds: end.redefinedEndIds ?? [],
+          navigationType: end.navigationType ?? null,
+          qualifiers: end.qualifiers ?? [],
+          aggregationKind: end.aggregationKind ?? 'NONE',
+        })),
+      })),
       invariants: (backendProject.umlModel.invariants ?? []).map((invariant) => ({
         ...invariant,
         expression: normalizeInvariantExpression(invariant.expression),
@@ -60,6 +109,11 @@ export function toBackendProjectDto(project: ProjectDto): ProjectDto {
     ...project,
     umlModel: {
       ...project.umlModel,
+      classes: project.umlModel.classes.map((umlClass) => ({
+        ...umlClass,
+        abstractClass: umlClass.abstract ?? false,
+        superClassIds: umlClass.superClassIds ?? [],
+      })),
       invariants: project.umlModel.invariants.map((invariant) => ({
         ...invariant,
         expression:

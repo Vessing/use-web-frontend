@@ -14,8 +14,8 @@ describe('mapProjectToClassDiagram', () => {
       position: { x: 100, y: 80 },
       data: {
         name: 'User',
-        attributes: ['name : String', 'books : Integer'],
-        operations: ['borrow(book : Book) : Boolean'],
+        attributes: ['+ name : String', '+ books : Integer'],
+        operations: ['+ borrow(book : Book) : Boolean'],
         invariants: [{ id: 'inv-max-books', label: 'inv: maxBooks' }],
       },
     });
@@ -33,11 +33,87 @@ describe('mapProjectToClassDiagram', () => {
     });
   });
 
+  it('renders visibility symbols and qualified namespace metadata', () => {
+    const project = createLibraryProject();
+    project.umlModel.classes[0].qualifiedName = 'university::people::User';
+    project.umlModel.classes[0].attributes[0].visibility = 'PRIVATE';
+    project.umlModel.classes[0].operations[0].visibility = 'PROTECTED';
+
+    const node = mapProjectToClassDiagram(project).nodes[0];
+
+    expect(node.data).toMatchObject({
+      qualifiedName: 'university::people::User',
+      attributes: ['- name : String', '+ books : Integer'],
+      operations: ['# borrow(book : Book) : Boolean'],
+    });
+  });
+
   it('skips associations whose class ends cannot be resolved', () => {
     const project = createLibraryProject();
     project.umlModel.associations[0].ends[1].classId = 'class-missing';
 
     expect(mapProjectToClassDiagram(project).edges).toEqual([]);
+  });
+
+  it('renders generalization edges from subclass to superclass', () => {
+    const project = createLibraryProject();
+    project.umlModel.classes[1].superClassIds = ['class-user'];
+    project.umlModel.classes[0].abstract = true;
+
+    const diagram = mapProjectToClassDiagram(project);
+
+    expect(diagram.nodes[0].data.abstractClass).toBe(true);
+    expect(diagram.edges).toContainEqual(
+      expect.objectContaining({
+        id: 'generalization:class-book:class-user',
+        type: 'umlGeneralization',
+        source: 'class-book',
+        target: 'class-user',
+      }),
+    );
+  });
+
+  it('renders an n-ary association as one hub with one segment per end', () => {
+    const project = createLibraryProject();
+    project.umlModel.classes.push({ id: 'class-branch', name: 'Branch', attributes: [], operations: [] });
+    project.umlModel.associations[0].ends.push({
+      id: 'end-borrows-branch', classId: 'class-branch', roleName: 'branch',
+      multiplicity: { lower: 1, upper: 1, unbounded: false, raw: '1' }, navigable: true,
+      qualifiers: [{ id: 'qualifier-shelf', name: 'shelf', type: 'String', order: 0 }],
+    });
+
+    const diagram = mapProjectToClassDiagram(project);
+
+    expect(diagram.nodes).toContainEqual(expect.objectContaining({
+      id: 'nary:assoc-borrows', type: 'naryHub',
+      data: expect.objectContaining({ name: 'Borrows', participantCount: 3 }),
+    }));
+    expect(diagram.edges.filter((edge) => edge.type === 'narySegment')).toHaveLength(3);
+    expect(diagram.edges).toContainEqual(expect.objectContaining({
+      id: 'assoc-borrows:end-borrows-branch',
+      data: expect.objectContaining({ qualifierNames: ['shelf'] }),
+    }));
+  });
+
+  it('renders aggregation and an association class as backend-projected notation', () => {
+    const project = createLibraryProject();
+    project.umlModel.classes.push({ id: 'class-loan', name: 'Loan', attributes: [], operations: [] });
+    project.umlModel.associations[0].associationClassId = 'class-loan';
+    project.umlModel.associations[0].ends[0].aggregationKind = 'COMPOSITE';
+
+    const diagram = mapProjectToClassDiagram(project);
+
+    expect(diagram.nodes.find((node) => node.id === 'class-loan')?.data.associationClass).toBe(true);
+    expect(diagram.nodes).toContainEqual(expect.objectContaining({ id: 'nary:assoc-borrows' }));
+    expect(diagram.edges).toContainEqual(expect.objectContaining({
+      id: 'association-class:assoc-borrows',
+      type: 'semanticConnector',
+      target: 'class-loan',
+    }));
+    expect(diagram.edges).toContainEqual(expect.objectContaining({
+      id: 'assoc-borrows:end-borrows-user',
+      data: expect.objectContaining({ endLabel: expect.objectContaining({ aggregationKind: 'COMPOSITE' }) }),
+    }));
   });
 
   it('uses draft layout positions before saved project layout positions', () => {
