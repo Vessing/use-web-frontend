@@ -202,12 +202,13 @@ function ObjectGeneralProperties({
       <PropertySection title="Slots">
         {!umlClass ? (
           <p className="property-empty">The referenced class could not be resolved.</p>
-        ) : umlClass.attributes.length === 0 ? (
+        ) : effectiveObjectAttributeGroups(project, umlClass.id).length === 0 ? (
           <p className="property-empty">No attributes defined for this class.</p>
         ) : (
-          umlClass.attributes
-            .filter((attribute) => !attribute.staticAttribute)
-            .map((attribute) => (
+          effectiveObjectAttributeGroups(project, umlClass.id).map((group) => (
+            <section className="object-attribute-group" key={group.owner.id}>
+              <h4>{group.owner.id === umlClass.id ? `Attributes of ${group.owner.name}` : `Inherited from ${group.owner.name}`}</h4>
+              {group.attributes.map((attribute) => (
               <SlotValueEditor
                 key={attribute.id}
                 project={project}
@@ -218,11 +219,30 @@ function ObjectGeneralProperties({
                 onRefreshProject={onRefreshProject}
                 onProjectChange={onProjectChange}
               />
-            ))
+              ))}
+            </section>
+          ))
         )}
       </PropertySection>
     </>
   );
+}
+
+function effectiveObjectAttributeGroups(project: ProjectDto, classId: string, visited = new Set<string>()): Array<{
+  owner: ProjectDto['umlModel']['classes'][number];
+  attributes: ProjectDto['umlModel']['classes'][number]['attributes'];
+}> {
+  if (visited.has(classId)) return [];
+  visited.add(classId);
+  const owner = project.umlModel.classes.find((candidate) => candidate.id === classId);
+  if (!owner) return [];
+  return [
+    ...(owner.superClassIds ?? []).flatMap((superclassId) =>
+      effectiveObjectAttributeGroups(project, superclassId, visited)),
+    ...(owner.attributes.filter((attribute) => !attribute.staticAttribute).length
+      ? [{ owner, attributes: owner.attributes.filter((attribute) => !attribute.staticAttribute) }]
+      : []),
+  ];
 }
 
 function ObjectAssociationAccess({

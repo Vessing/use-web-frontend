@@ -9,7 +9,7 @@ import {
   type ProjectDto,
 } from '../../../api';
 import { useAppStore } from '../../../state';
-import { getEditableModelText, renderUseModelText } from '../modelText';
+import { getEditableModelText } from '../modelText';
 import { OclComplianceProfile } from './OclComplianceProfile';
 
 interface OclEditorViewProps {
@@ -18,6 +18,7 @@ interface OclEditorViewProps {
   isLoading: boolean;
   error: string | null;
   onProjectChange: (project: ProjectDto) => void;
+  onRefreshProject?: () => Promise<boolean>;
   applyModelText?: typeof projectApi.applyModelText;
   loadComplianceProfile?: () => Promise<OclComplianceProfileDto>;
 }
@@ -28,6 +29,7 @@ export function OclEditorView({
   isLoading,
   error,
   onProjectChange,
+  onRefreshProject = async () => true,
   applyModelText = projectApi.applyModelText,
   loadComplianceProfile = oclApi.getComplianceProfile,
 }: OclEditorViewProps) {
@@ -51,7 +53,7 @@ export function OclEditorView({
       const nextSignature = project ? projectModelSignature(project) : null;
       if (!isDirty && modelSignatureRef.current !== nextSignature) {
         modelSignatureRef.current = nextSignature;
-        setModelText(project ? renderUseModelText(project) : '');
+        setModelText(project ? getEditableModelText(project) : '');
         setDiagnostics([]);
         setApplyError(null);
         setApplySuccess(null);
@@ -131,11 +133,16 @@ export function OclEditorView({
         sourceFormat: 'use',
         sourceOrigin: 'ocl-editor',
         baseVersion: activeProject.modelText?.version ?? null,
+        sourceFiles: Object.fromEntries(
+          (activeProject.modelText?.sourceFiles ?? []).map((source) => [source.sourcePath, source.text]),
+        ),
       });
 
       setDiagnostics(response.diagnostics);
       onProjectChange(response.project);
       modelSignatureRef.current = projectModelSignature(response.project);
+
+      await onRefreshProject();
 
       if (response.modelText?.modelText) {
         setModelText(response.modelText.modelText);

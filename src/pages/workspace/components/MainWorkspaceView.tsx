@@ -17,6 +17,7 @@ interface MainWorkspaceViewProps {
   isLoadingProject: boolean;
   projectError: string | null;
   onProjectChange: (project: ProjectDto) => void;
+  onRefreshProject: () => Promise<boolean>;
 }
 
 export function MainWorkspaceView({
@@ -25,6 +26,7 @@ export function MainWorkspaceView({
   isLoadingProject,
   projectError,
   onProjectChange,
+  onRefreshProject,
 }: MainWorkspaceViewProps) {
   if (activeView === 'class-diagram') {
     return (
@@ -62,6 +64,7 @@ export function MainWorkspaceView({
           isLoading={isLoadingProject}
           error={projectError}
           onProjectChange={onProjectChange}
+          onRefreshProject={onRefreshProject}
         />
       </main>
     );

@@ -20,7 +20,7 @@ export function syncProjectChange({
   appStoreActions.addConsoleLog({
     level: 'debug',
     source: 'api',
-    message: `Saving project ${projectId}.`,
+    message: `Saving project "${nextProject.project.name}".`,
   });
 
   void projectApi

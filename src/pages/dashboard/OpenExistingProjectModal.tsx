@@ -5,7 +5,11 @@ import type { ApplyModelTextResponseDto, OclDiagnosticDto } from '../../api';
 interface OpenExistingProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImportUseFile: (file: File, modelText: string) => Promise<ApplyModelTextResponseDto>;
+  onImportUseFile: (
+    file: File,
+    modelText: string,
+    sourceFiles: Record<string, string>,
+  ) => Promise<ApplyModelTextResponseDto>;
 }
 
 interface SelectedUseFile {
@@ -19,7 +23,9 @@ export function OpenExistingProjectModal({
   onImportUseFile,
 }: OpenExistingProjectModalProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const dependencyInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<SelectedUseFile | null>(null);
+  const [dependencyFiles, setDependencyFiles] = useState<File[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<OclDiagnosticDto[]>([]);
   const [isImporting, setIsImporting] = useState(false);
@@ -45,10 +51,26 @@ export function OpenExistingProjectModal({
     try {
       const modelText = await file.text();
       setSelectedFile({ file, modelText });
+      setDependencyFiles([]);
     } catch {
       setSelectedFile(null);
       setFormError('The selected file could not be read.');
     }
+  };
+
+  const handleSelectDependencies = (files: FileList | null) => {
+    const selectedFiles = Array.from(files ?? []);
+    if (selectedFiles.some((file) => !file.name.toLowerCase().endsWith('.use'))) {
+      setFormError('Only .use files can be added as imported sources.');
+      return;
+    }
+    setFormError(null);
+    setDependencyFiles((current) => [
+      ...current,
+      ...selectedFiles.filter(
+        (file) => !current.some((currentFile) => sourceFilePath(currentFile) === sourceFilePath(file)),
+      ),
+    ]);
   };
 
   const handleOpenProject = async () => {
@@ -62,7 +84,15 @@ export function OpenExistingProjectModal({
     setDiagnostics([]);
 
     try {
-      const response = await onImportUseFile(selectedFile.file, selectedFile.modelText);
+      const sourceFiles = Object.fromEntries(
+        await Promise.all(
+          dependencyFiles.map(async (file) => [
+            sourceFilePath(file),
+            await file.text(),
+          ]),
+        ),
+      );
+      const response = await onImportUseFile(selectedFile.file, selectedFile.modelText, sourceFiles);
       setDiagnostics(response.diagnostics ?? []);
 
       if (!response.success) {
@@ -125,7 +155,47 @@ export function OpenExistingProjectModal({
               void handleSelectFile(event.currentTarget.files?.[0]);
             }}
           />
-          <p className="modal-empty">Supported format: .use</p>
+          <button type="button" onClick={() => dependencyInputRef.current?.click()}>
+            Add imported .use files
+          </button>
+          <input
+            ref={dependencyInputRef}
+            className="visually-hidden"
+            type="file"
+            accept=".use"
+            multiple
+            aria-label="Choose imported .use files"
+            onChange={(event) => {
+              handleSelectDependencies(event.currentTarget.files);
+              event.currentTarget.value = '';
+            }}
+          />
+          <p className="modal-empty">
+            {dependencyFiles.length
+              ? `${dependencyFiles.length} imported source file${dependencyFiles.length === 1 ? '' : 's'} included.`
+              : 'Add every .use file referenced by imports.'}
+          </p>
+          {dependencyFiles.length ? (
+            <ul className="import-source-files" aria-label="Included imported source files">
+              {dependencyFiles.map((file) => (
+                <li key={sourceFilePath(file)}>
+                  <span>
+                    <strong>{sourceFilePath(file)}</strong>
+                    <small>{formatFileSize(file.size)}</small>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove imported file ${sourceFilePath(file)}`}
+                    onClick={() => setDependencyFiles((current) =>
+                      current.filter((currentFile) => sourceFilePath(currentFile) !== sourceFilePath(file)),
+                    )}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {formError ? (
             <p className="modal-form-error" role="alert">
               {formError}
@@ -167,4 +237,8 @@ function formatFileSize(bytes: number) {
     return `${bytes} B`;
   }
   return `${Math.round(bytes / 1024)} KB`;
+}
+
+function sourceFilePath(file: File) {
+  return file.webkitRelativePath || file.name;
 }

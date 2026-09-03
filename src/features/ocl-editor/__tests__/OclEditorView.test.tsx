@@ -27,6 +27,7 @@ describe('OclEditorView', () => {
       changedElementIds: ['class-user'],
     }));
     const onProjectChange = vi.fn();
+    const onRefreshProject = vi.fn().mockResolvedValue(true);
 
     render(
       <OclEditorView
@@ -35,6 +36,7 @@ describe('OclEditorView', () => {
         isLoading={false}
         error={null}
         onProjectChange={onProjectChange}
+        onRefreshProject={onRefreshProject}
         applyModelText={applyModelText}
         loadComplianceProfile={loadProfile}
       />,
@@ -57,6 +59,7 @@ describe('OclEditorView', () => {
       );
     });
     expect(onProjectChange).toHaveBeenCalledWith(updatedProject);
+    expect(onRefreshProject).toHaveBeenCalledOnce();
     expect(screen.getByRole('status')).toHaveTextContent('Changes applied. 1 model element(s) updated.');
     expect(screen.getByLabelText('OCL Console')).toHaveTextContent('Apply APPLIED');
   });
@@ -102,7 +105,7 @@ describe('OclEditorView', () => {
     expect(screen.getByRole('button', { name: 'Apply Changes' })).toBeEnabled();
   });
 
-  it('updates generated model text when the UML model changes outside the editor', () => {
+  it('updates backend-rendered model text when the project is refreshed', () => {
     const project = createProject();
     const onProjectChange = vi.fn();
     const { rerender } = render(
@@ -139,6 +142,11 @@ describe('OclEditorView', () => {
                 : umlClass,
             ),
           },
+          modelText: {
+            projectId: 'project-library',
+            modelText: 'model Library\n\nclass User\nattributes\n  books : Integer\n  name : String\nend\n',
+            format: 'USE_MODEL_TEXT',
+          },
         }}
         isLoading={false}
         error={null}
@@ -151,6 +159,33 @@ describe('OclEditorView', () => {
       'name : String',
     );
   });
+
+  it('preserves imported USE source when an updated project is received', () => {
+    const importedText = '-- Original header\nmodel Employee\n\nclass Person end\n';
+    const project = {
+      ...createProject(),
+      project: { ...createProject().project, updatedAt: '2026-09-03T10:00:00.000Z' },
+      modelText: {
+        projectId: 'project-library',
+        modelText: importedText,
+        format: 'USE_MODEL_TEXT',
+        updatedAt: '2026-09-03T09:00:00.000Z',
+      },
+    };
+
+    render(
+      <OclEditorView
+        projectId="project-library"
+        project={project}
+        isLoading={false}
+        error={null}
+        onProjectChange={vi.fn()}
+        loadComplianceProfile={loadProfile}
+      />,
+    );
+
+    expect(screen.getByLabelText('USE model text')).toHaveValue(importedText);
+  });
 });
 
 function createProject(): ProjectDto {
@@ -159,6 +194,11 @@ function createProject(): ProjectDto {
     project: {
       id: 'project-library',
       name: 'Library',
+    },
+    modelText: {
+      projectId: 'project-library',
+      modelText: 'model Library\n\nclass User\nattributes\n  books : Integer\nend\n\nconstraints\ncontext User inv maxBooks:\n  self.books <= 5\n',
+      format: 'USE_MODEL_TEXT',
     },
     umlModel: {
       classes: [

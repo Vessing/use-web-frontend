@@ -18,6 +18,26 @@ describe('modelCommandApi Association-Class command', () => {
   });
 });
 
+describe('modelCommandApi class command', () => {
+  it('uses the revision-protected create route with the complete class draft', async () => {
+    const calls: Array<{ path: string; body?: unknown }> = [];
+    const client = {
+      post: async <TResponse, TRequest>(path: string, body?: TRequest) => {
+        calls.push({ path, body });
+        return {} as TResponse;
+      },
+    } as HttpClient;
+    const draft: UmlClassDto = { id: 'class/course', name: 'Course', attributes: [], operations: [] };
+    const command = { expectedRevision: '18', draft };
+
+    await createModelCommandApi(client).createClass('project one', command);
+
+    expect(calls).toEqual([
+      { path: '/projects/project%20one/commands/classes', body: command },
+    ]);
+  });
+});
+
 describe('modelCommandApi F11 invariant commands', () => {
   it('uses revision-protected create and update routes with the complete draft', async () => {
     const calls: Array<{ method: string; path: string; body?: unknown }> = [];

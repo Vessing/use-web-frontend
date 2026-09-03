@@ -140,7 +140,7 @@ export interface UmlAssociationDto {
 export interface UmlAssociationEndDto {
   id: Id;
   classId: Id;
-  roleName: string;
+  roleName: string | null;
   multiplicity: MultiplicityDto;
   navigable?: boolean;
   ordered?: boolean;

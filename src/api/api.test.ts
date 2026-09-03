@@ -143,6 +143,9 @@ describe('API client and DTO contracts', () => {
       },
       put: async <TResponse, TRequest = unknown>(path: string, body: TRequest) => {
         calls.push({ method: 'PUT', path, body });
+        if (path.endsWith('/layout')) {
+          return project.layout as TResponse;
+        }
         return project as TResponse;
       },
       delete: async <TResponse>(path: string) => {
@@ -157,6 +160,7 @@ describe('API client and DTO contracts', () => {
     await api.getProject('project library');
     await api.getProjectReadModel('project library');
     await api.saveProject('project-library', project);
+    await api.saveLayout('project-library', project.layout);
     await api.applyModelText('project-library', {
       modelText: 'model Library',
       format: 'USE_MODEL_TEXT',
@@ -174,6 +178,7 @@ describe('API client and DTO contracts', () => {
       { method: 'GET', path: '/projects/project%20library' },
       { method: 'GET', path: '/projects/project%20library/read-model' },
       { method: 'PUT', path: '/projects/project-library', body: project },
+      { method: 'PUT', path: '/projects/project-library/layout', body: project.layout },
       {
         method: 'POST',
         path: '/projects/project-library/model-text/apply',
@@ -581,6 +586,21 @@ describe('API client and DTO contracts', () => {
         requestId: 'req-1',
       },
     });
+  });
+
+  it('does not serve API reads from the browser cache', async () => {
+    let requestCache: RequestCache | undefined;
+    const client = createHttpClient({
+      baseUrl: '/api/v1',
+      fetchFn: async (_url, init) => {
+        requestCache = init?.cache;
+        return new Response(JSON.stringify({ ok: true }));
+      },
+    });
+
+    await client.get('/projects/project-library/read-model');
+
+    expect(requestCache).toBe('no-store');
   });
 });
 

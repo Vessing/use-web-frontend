@@ -64,6 +64,51 @@ describe('ObjectPropertiesPanel F10 typed slot commands', () => {
   });
 });
 
+describe('ObjectPropertiesPanel inherited slots', () => {
+  it('shows inherited attributes alongside attributes defined by the concrete object type', () => {
+    const inheritedProject: ProjectDto = {
+      ...project,
+      umlModel: {
+        ...project.umlModel,
+        classes: [
+          {
+            id: 'parent',
+            name: 'Parent',
+            attributes: [{ id: 'parent-code', name: 'parentCode', type: 'String' }],
+            operations: [],
+          },
+          {
+            id: 'child',
+            name: 'Child',
+            superClassIds: ['parent'],
+            attributes: [{ id: 'child-code', name: 'childCode', type: 'String' }],
+            operations: [],
+          },
+        ],
+      },
+      objectModel: {
+        objects: [{
+          id: 'child-one',
+          name: 'child1',
+          classId: 'child',
+          slots: [
+            { id: 'parent-code-slot', attributeId: 'parent-code', value: 'P-1', valueType: 'String' },
+            { id: 'child-code-slot', attributeId: 'child-code', value: 'C-1', valueType: 'String' },
+          ],
+        }],
+        links: [],
+      },
+    };
+
+    render(<ObjectPropertiesPanel project={inheritedProject} object={inheritedProject.objectModel.objects[0]} readVersion="18" onProjectChange={vi.fn()} onRefreshProject={vi.fn()} />);
+
+    expect(screen.getByRole('heading', { name: 'Inherited from Parent' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Attributes of Child' })).toBeInTheDocument();
+    expect(screen.getByLabelText('parentCode : String')).toHaveValue('P-1');
+    expect(screen.getByLabelText('childCode : String')).toHaveValue('C-1');
+  });
+});
+
 const attribute = { id: 'double-balance', name: 'doubleBalance', type: 'Integer', derived: true, deriveExpression: 'self.balance * 2' };
 const object = { id: 'account-one', name: 'account1', classId: 'account', slots: [] };
 const project: ProjectDto = { formatVersion: '1', project: { id: 'project-1', name: 'Accounts' }, umlModel: { classes: [{ id: 'account', name: 'Account', attributes: [attribute], operations: [] }], associations: [], invariants: [] }, objectModel: { objects: [object], links: [] }, layout: { classDiagram: { nodes: [] }, objectDiagram: { nodes: [] } } };

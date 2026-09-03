@@ -1,11 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ProjectDto, ProjectReadModelDto } from '../../../../api';
 import { appStoreActions, getAppState } from '../../../../state';
 import { BottomPanel } from '../BottomPanel';
 import { ExplorerSidebar } from '../ExplorerSidebar';
+import { PropertiesPanel } from '../PropertiesPanel';
 
 describe('F1 workspace shell', () => {
   beforeEach(() => appStoreActions.reset());
@@ -34,6 +35,39 @@ describe('F1 workspace shell', () => {
     });
   });
 
+  it('switches explorer selection between classes, enumerations, and DataTypes', async () => {
+    const user = userEvent.setup();
+    const projectWithModelTypes: ProjectDto = {
+      ...project,
+      umlModel: {
+        ...project.umlModel,
+        enumerations: [{ id: 'enum-status', name: 'Status', literals: [] }],
+        dataTypes: [{ id: 'datatype-code', name: 'CourseCode', properties: [] }],
+      },
+    };
+    const classReadModel: ProjectReadModelDto = {
+      ...readModel,
+      explorer: [
+        { nodeId: 'root', elementId: 'root', parentNodeId: null, name: 'Project root', qualifiedName: 'Project root', kind: 'PROJECT_ROOT', imported: false, readOnly: false },
+        { nodeId: 'person', elementId: 'class-person', parentNodeId: 'root', name: 'Person', qualifiedName: 'Person', kind: 'CLASS', imported: false, readOnly: false },
+        { nodeId: 'person-name', elementId: 'attribute-person-name', parentNodeId: 'person', name: 'name', qualifiedName: 'Person::name', kind: 'ATTRIBUTE', imported: false, readOnly: false },
+        { nodeId: 'status', elementId: 'enum-status', parentNodeId: 'root', name: 'Status', qualifiedName: 'Status', kind: 'ENUMERATION', imported: false, readOnly: false },
+        { nodeId: 'course-code', elementId: 'datatype-code', parentNodeId: 'root', name: 'CourseCode', qualifiedName: 'CourseCode', kind: 'DATATYPE', imported: false, readOnly: false },
+      ],
+    };
+
+    render(<ExplorerSidebar activeView="class-diagram" project={projectWithModelTypes} readModel={classReadModel} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Status' }));
+    expect(getAppState().selection).toEqual({ view: 'class-diagram', type: 'enumeration', id: 'enum-status' });
+
+    await user.click(screen.getByRole('button', { name: 'CourseCode' }));
+    expect(getAppState().selection).toEqual({ view: 'class-diagram', type: 'dataType', id: 'datatype-code' });
+
+    await user.click(screen.getByRole('button', { name: 'Person' }));
+    expect(getAppState().selection).toEqual({ view: 'class-diagram', type: 'class', id: 'class-person' });
+  });
+
   it('exposes the four canonical bottom panel tabs and their empty states', async () => {
     const user = userEvent.setup();
     render(<BottomPanel project={project} />);
@@ -48,6 +82,31 @@ describe('F1 workspace shell', () => {
     expect(screen.getByText('No diagnostics')).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Invocation Results' }));
     expect(screen.getByText('No invocation results')).toBeInTheDocument();
+  });
+
+  it('provides collapse actions for both workspace side panels', async () => {
+    const user = userEvent.setup();
+    const onCollapseProperties = vi.fn();
+    const onCollapseExplorer = vi.fn();
+
+    render(
+      <>
+        <ExplorerSidebar activeView="class-diagram" project={project} readModel={null} isLoading={false} error={null} onCollapse={onCollapseExplorer} />
+        <PropertiesPanel
+          activeView="class-diagram"
+          project={project}
+          readModel={null}
+          onCollapse={onCollapseProperties}
+          onProjectChange={() => undefined}
+          onRefreshProject={async () => true}
+        />
+      </>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Collapse Explorer' }));
+    await user.click(screen.getByRole('button', { name: 'Collapse Properties' }));
+    expect(onCollapseExplorer).toHaveBeenCalledOnce();
+    expect(onCollapseProperties).toHaveBeenCalledOnce();
   });
 
   it('supports roving keyboard focus across all bottom panel tabs', async () => {
@@ -109,8 +168,11 @@ describe('F1 workspace shell', () => {
     const user = userEvent.setup();
     render(<ExplorerSidebar activeView="class-diagram" project={project} readModel={readModel} isLoading={false} error={null} />);
 
+    const imports = screen.getByRole('heading', { name: 'Imports' }).closest('section');
+    expect(imports).not.toBeNull();
+    expect(within(imports!).getByRole('button', { name: 'shared::core Imported · Read only' })).toBeInTheDocument();
     expect(screen.getAllByText('Imported · Read only')).toHaveLength(2);
-    await user.click(screen.getByRole('button', { name: 'shared::core Imported · Read only' }));
+    await user.click(within(imports!).getByRole('button', { name: 'shared::core Imported · Read only' }));
     expect(getAppState().selection).toEqual({ view: 'class-diagram', type: 'import', id: 'import-core' });
   });
 });
@@ -120,7 +182,7 @@ const readModel: ProjectReadModelDto = {
   readVersion: 'revision-18', capabilities: {}, diagnostics: [], classes: [],
   explorer: [
     { nodeId: 'root', elementId: 'root', parentNodeId: null, name: 'Project root', qualifiedName: 'Project root', kind: 'PROJECT_ROOT', imported: false, readOnly: false },
-    { nodeId: 'import-root', elementId: 'import-core', parentNodeId: null, name: 'shared::core', qualifiedName: 'shared::core', kind: 'IMPORT_ROOT', imported: true, readOnly: true, importId: 'import-core', provenance: 'shared.use' },
+    { nodeId: 'import-root', elementId: 'import-core', parentNodeId: 'root', name: 'shared::core', qualifiedName: 'shared::core', kind: 'IMPORT_ROOT', imported: true, readOnly: true, importId: 'import-core', provenance: 'shared.use' },
     { nodeId: 'identifier', elementId: 'class-identifier', parentNodeId: 'import-root', name: 'Identifier', qualifiedName: 'shared::core::Identifier', kind: 'CLASS', imported: true, readOnly: true, importId: 'import-core' },
   ],
 };

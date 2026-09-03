@@ -12,6 +12,27 @@ afterEach(() => {
 });
 
 describe('OperationPropertiesSection', () => {
+  it('shows an empty untouched create draft and validates only after submit', async () => {
+    const user = userEvent.setup();
+    const create = vi.spyOn(modelCommandApi, 'createOperation');
+    render(<OperationPropertiesSection project={project} umlClass={project.umlModel.classes[0]} revision="18" onRefreshProject={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Add Operation' }));
+
+    expect(screen.getByLabelText('Operation')).toHaveValue('__new__');
+    expect(screen.getByLabelText(/^Name/)).toHaveValue('');
+    expect(screen.getByLabelText(/^Name/)).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText('Operation name is required.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Required')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Create Operation' }));
+
+    expect(screen.getByLabelText(/^Name/)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Required')).toBeInTheDocument();
+    expect(screen.getByText('Operation name is required.')).toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('saves the complete ordered signature and reloads the authoritative projection', async () => {
     const user = userEvent.setup();
     const refresh = vi.fn().mockResolvedValue(true);

@@ -52,6 +52,7 @@ export function mapProjectToObjectDiagram(
       selection,
       index,
       associationClassLinkByObjectId.get(object.id),
+      classesById,
     ),
   );
   const hubLinks = project.objectModel.links.filter(
@@ -121,6 +122,7 @@ function mapObjectNode(
   selection: SelectionState,
   index: number,
   associationClassLink?: ObjectLinkDto,
+  classesById?: Map<Id, UmlClassDto>,
 ): DiagramNode {
   const validationSummary = summarizeValidationMarkers(markersByElementId[object.id]);
 
@@ -143,7 +145,7 @@ function mapObjectNode(
       name: object.displayName ?? object.name,
       className: umlClass?.name ?? object.classId,
       associationClass: Boolean(associationClassLink),
-      slots: formatSlots(object, umlClass),
+      slots: formatSlots(object, umlClass, classesById),
       ...validationSummary,
     },
   };
@@ -173,7 +175,7 @@ function mapObjectLinkEdge(
         data: {
           ref: { elementType: 'objectLink' as const, elementId: link.id },
           endLabel: {
-            roleName: end.roleName,
+            roleName: end.roleName ?? '',
             multiplicity: formatMultiplicity(end.multiplicity),
             aggregationKind: end.aggregationKind ?? 'NONE',
           },
@@ -200,10 +202,7 @@ function mapObjectLinkEdge(
     return [];
   }
 
-  const validationSummary = summarizeValidationMarkers([
-    ...(markersByElementId[link.id] ?? []),
-    ...(markersByElementId[link.associationId] ?? []),
-  ]);
+  const validationSummary = summarizeValidationMarkers(markersByElementId[link.id]);
 
   return [
     {
@@ -219,12 +218,12 @@ function mapObjectLinkEdge(
         ref: { elementType: 'objectLink', elementId: link.id },
         associationName: link.name?.trim() || association.name,
         sourceEnd: {
-          roleName: sourceEnd.roleName,
+          roleName: sourceEnd.roleName ?? '',
           multiplicity: formatMultiplicity(sourceEnd.multiplicity),
           aggregationKind: sourceEnd.aggregationKind ?? 'NONE',
         },
         targetEnd: {
-          roleName: targetEnd.roleName,
+          roleName: targetEnd.roleName ?? '',
           multiplicity: formatMultiplicity(targetEnd.multiplicity),
           aggregationKind: targetEnd.aggregationKind ?? 'NONE',
         },
@@ -242,19 +241,33 @@ function centerOfNodes(nodes: DiagramNode[]) {
   };
 }
 
-function formatSlots(object: ObjectInstanceDto, umlClass: UmlClassDto | undefined): string[] {
+function formatSlots(object: ObjectInstanceDto, umlClass: UmlClassDto | undefined,
+  classesById: Map<Id, UmlClassDto> = new Map()): string[] {
   if (!umlClass) {
     return object.slots.map((slot) =>
       `${slot.attributeId} = ${slot.isUnset ? '<unset>' : formatSlotValue(slot.value)}`,
     );
   }
 
-  return umlClass.attributes.map((attribute) => {
+  return effectiveAttributes(umlClass, classesById).map((attribute) => {
     const slot = object.slots.find((candidate) => candidate.attributeId === attribute.id);
     const value = !slot || slot.isUnset ? '<unset>' : formatSlotValue(slot.value);
 
     return `${attribute.name} = ${value}`;
   });
+}
+
+function effectiveAttributes(umlClass: UmlClassDto, classesById: Map<Id, UmlClassDto>,
+  visited = new Set<Id>()): UmlClassDto['attributes'] {
+  if (visited.has(umlClass.id)) return [];
+  visited.add(umlClass.id);
+  return [
+    ...(umlClass.superClassIds ?? []).flatMap((id) => {
+      const supertype = classesById.get(id);
+      return supertype ? effectiveAttributes(supertype, classesById, visited) : [];
+    }),
+    ...umlClass.attributes,
+  ].filter((attribute) => !attribute.staticAttribute);
 }
 
 function formatSlotValue(value: unknown): string {

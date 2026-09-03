@@ -139,6 +139,40 @@ describe('mapProjectToObjectDiagram', () => {
     });
   });
 
+  it('includes inherited attributes in the concrete object node slots', () => {
+    const project = createLibraryProject();
+    project.umlModel.classes = [
+      {
+        id: 'class-person',
+        name: 'Person',
+        attributes: [{ id: 'attr-person-id', name: 'personId', type: 'Integer' }],
+        operations: [],
+      },
+      {
+        id: 'class-user',
+        name: 'User',
+        superClassIds: ['class-person'],
+        attributes: [{ id: 'attr-user-name', name: 'name', type: 'String' }],
+        operations: [],
+      },
+    ];
+    project.objectModel.objects = [{
+      id: 'object-alice',
+      name: 'alice',
+      classId: 'class-user',
+      slots: [
+        { id: 'slot-alice-id', attributeId: 'attr-person-id', value: 7, valueType: 'Integer' },
+        { id: 'slot-alice-name', attributeId: 'attr-user-name', value: 'Alice', valueType: 'String' },
+      ],
+    }];
+
+    const diagram = mapProjectToObjectDiagram(project);
+
+    expect(diagram.nodes[0].data).toMatchObject({
+      slots: ['personId = 7', 'name = Alice'],
+    });
+  });
+
   it('renders one central node and all participants for an n-ary object link', () => {
     const project = createLibraryProject();
     project.umlModel.classes.push({ id: 'class-branch', name: 'Branch', attributes: [], operations: [] });

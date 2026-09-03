@@ -125,104 +125,141 @@ function ClassGeneralProperties({
   onRefreshProject = async () => true,
 }: ClassPropertiesPanelProps & { nameError: string | null }) {
   const projection = readModel?.classes.find((candidate) => candidate.id === umlClass.id);
+  const [featureTab, setFeatureTab] = useState<'details' | 'attributes' | 'operations' | 'generalizations' | 'definitions'>('details');
+  const [savingNamespace, setSavingNamespace] = useState(false);
+
+  const changeNamespace = async (packageId: string | null) => {
+    const revision = readModel?.readVersion;
+    if (!revision) {
+      appStoreActions.addConsoleLog({
+        level: 'error',
+        source: 'api',
+        message: 'The model revision is not available. Refresh the project before changing the namespace.',
+      });
+      return;
+    }
+
+    setSavingNamespace(true);
+    try {
+      await modelCommandApi.updateClass(project.project.id, umlClass.id, {
+        expectedRevision: revision,
+        draft: {
+          ...umlClass,
+          packageId,
+          superClassIds: umlClass.superClassIds ?? [],
+          visibility: umlClass.visibility ?? 'PUBLIC',
+          qualifiedName: projection?.qualifiedName ?? umlClass.qualifiedName ?? umlClass.name,
+        },
+      });
+      await onRefreshProject();
+      appStoreActions.addConsoleLog({
+        level: 'info',
+        source: 'api',
+        message: `Namespace of "${umlClass.name}" saved.`,
+      });
+    } catch (error) {
+      const message = error instanceof ApiClientError
+        ? `${error.dto.code}: ${error.dto.userMessage ?? error.message}`
+        : 'The class namespace could not be saved.';
+      appStoreActions.addConsoleLog({ level: 'error', source: 'api', message });
+    } finally {
+      setSavingNamespace(false);
+    }
+  };
+
   return (
     <>
-      <PropertyTextField label="Class ID" value={umlClass.id} readOnly />
-      <PropertyTextField
-        label="Class Name"
-        value={umlClass.name}
-        error={nameError}
-        onChange={(name) => {
-          onProjectChange(updateClass(project, umlClass.id, (current) => ({ ...current, name })));
-          appStoreActions.markValidationStale();
-        }}
-        onCommit={(name) =>
-          syncProjectChange({
-            projectId: project.project.id,
-            nextProject: updateClass(project, umlClass.id, (current) => ({ ...current, name })),
-            onProjectChange,
-            successMessage: `Class "${name}" saved.`,
-          })
-        }
-      />
-      <PropertyTextField
-        label="Qualified Name"
-        value={projection?.qualifiedName ?? umlClass.qualifiedName ?? umlClass.name}
-        readOnly
-      />
-      <VisibilitySelect
-        label="Class Visibility"
-        value={umlClass.visibility ?? 'PUBLIC'}
-        onChange={(visibility) =>
-          syncProjectChange({
-            projectId: project.project.id,
-            nextProject: updateClass(project, umlClass.id, (current) => ({ ...current, visibility })),
-            onProjectChange,
-            successMessage: `Visibility of "${umlClass.name}" saved.`,
-          })
-        }
-      />
-      <label className="property-field">
-        <span>Package / Namespace</span>
-        <select
-          value={umlClass.packageId ?? ''}
-          onChange={(event) => {
-            const packageId = event.target.value || null;
-            void syncProjectChange({
-              projectId: project.project.id,
-              nextProject: updateClass(project, umlClass.id, (current) => ({ ...current, packageId })),
-              onProjectChange,
-              successMessage: `Namespace of "${umlClass.name}" saved.`,
-            });
+      <header className="class-properties-summary">
+        <strong>{umlClass.name}</strong>
+        <span>{projection?.qualifiedName ?? umlClass.qualifiedName ?? umlClass.name} · {(umlClass.visibility ?? 'PUBLIC').toLowerCase()}</span>
+      </header>
+      <div className="class-feature-tabs" role="tablist" aria-label="Class features">
+        <FeatureTab active={featureTab === 'details'} label="Details" onClick={() => setFeatureTab('details')} />
+        <FeatureTab active={featureTab === 'attributes'} label="Attributes" onClick={() => setFeatureTab('attributes')} />
+        <FeatureTab active={featureTab === 'operations'} label="Operations" onClick={() => setFeatureTab('operations')} />
+        <FeatureTab active={featureTab === 'generalizations'} label="Generalizations" onClick={() => setFeatureTab('generalizations')} />
+        <FeatureTab active={featureTab === 'definitions'} label="Definitions" onClick={() => setFeatureTab('definitions')} />
+      </div>
+
+      {featureTab === 'details' ? <>
+        <h4 className="class-feature-heading">Class Details</h4>
+        <PropertyTextField
+          label="Class Name"
+          value={umlClass.name}
+          error={nameError}
+          onChange={(name) => {
+            onProjectChange(updateClass(project, umlClass.id, (current) => ({ ...current, name })));
+            appStoreActions.markValidationStale();
           }}
-        >
-          <option value="">Project root</option>
-          {(project.umlModel.packages ?? []).map((item) => <option key={item.id} value={item.id}>{item.qualifiedName}</option>)}
-        </select>
-      </label>
-      <DeleteActionButton
-        label="Delete Class"
-        confirmMessage={`Delete class "${umlClass.name}"? Dependent associations, invariants, objects, links, layout entries and validation markers may be removed by the backend.`}
-        onDelete={() =>
-          deleteProjectElementAndSync({
-            project,
-            deleteRequest: () => umlApi.deleteClass(project.project.id, umlClass.id),
-            onProjectChange,
-            successMessage: `Class "${umlClass.name}" deleted.`,
-          }).then(() => undefined)
-        }
-      />
+          onCommit={(name) =>
+            syncProjectChange({
+              projectId: project.project.id,
+              nextProject: updateClass(project, umlClass.id, (current) => ({ ...current, name })),
+              onProjectChange,
+              successMessage: `Class "${name}" saved.`,
+            })
+          }
+        />
+        <PropertyTextField label="Qualified Name" value={projection?.qualifiedName ?? umlClass.qualifiedName ?? umlClass.name} readOnly />
+        <VisibilitySelect label="Class Visibility" value={umlClass.visibility ?? 'PUBLIC'} onChange={(visibility) =>
+          syncProjectChange({ projectId: project.project.id, nextProject: updateClass(project, umlClass.id, (current) => ({ ...current, visibility })), onProjectChange, successMessage: `Visibility of "${umlClass.name}" saved.` })
+        } />
+        <label className="property-checkbox">
+          <input
+            type="checkbox"
+            checked={projection?.abstractClass ?? umlClass.abstract ?? false}
+            onChange={(event) => syncProjectChange({
+              projectId: project.project.id,
+              nextProject: updateClass(project, umlClass.id, (current) => ({
+                ...current,
+                abstractClass: event.target.checked,
+              })),
+              onProjectChange,
+              successMessage: event.target.checked
+                ? `Class "${umlClass.name}" marked as abstract.`
+                : `Class "${umlClass.name}" marked as concrete.`,
+            })}
+          />
+          Abstract class
+        </label>
+        <label className="property-field"><span>Package / Namespace</span><select value={umlClass.packageId ?? ''} disabled={savingNamespace} onChange={(event) => {
+          void changeNamespace(event.target.value || null);
+        }}><option value="">Project root</option>{(project.umlModel.packages ?? []).map((item) => <option key={item.id} value={item.id}>{item.qualifiedName}</option>)}</select></label>
+        <DeleteActionButton label="Delete Class" confirmMessage={`Delete class "${umlClass.name}"? Dependent associations, invariants, objects, links, layout entries and validation markers may be removed by the backend.`} onDelete={() =>
+          deleteProjectElementAndSync({ project, deleteRequest: () => umlApi.deleteClass(project.project.id, umlClass.id), onProjectChange, successMessage: `Class "${umlClass.name}" deleted.` }).then(() => undefined)
+        } />
+      </> : null}
 
-      <PropertySection
-        title="Attributes"
-      >
+      {featureTab === 'attributes' ? <PropertySection title="Attributes">
         <AttributePropertiesSection project={project} umlClass={umlClass} revision={readModel?.readVersion ?? ''} onRefreshProject={onRefreshProject} />
-      </PropertySection>
+      </PropertySection> : null}
 
-      <PropertySection
-        title="Operations"
-      >
+      {featureTab === 'operations' ? <PropertySection title="Operations">
         <OperationPropertiesSection
           project={project}
           umlClass={umlClass}
           revision={readModel?.readVersion ?? ''}
           onRefreshProject={onRefreshProject}
         />
-      </PropertySection>
+      </PropertySection> : null}
 
-      <GeneralizationsSection
+      {featureTab === 'generalizations' ? <GeneralizationsSection
         project={project}
         umlClass={umlClass}
         projection={projection}
         revision={readModel?.readVersion}
         onRefreshProject={onRefreshProject}
-      />
+      /> : null}
 
-      <PropertySection title="Definitions">
+      {featureTab === 'definitions' ? <PropertySection title="Definitions">
         <DefinitionPropertiesSection project={project} ownerKind="CLASS" ownerId={umlClass.id} ownerName={projection?.qualifiedName ?? umlClass.qualifiedName ?? umlClass.name} revision={readModel?.readVersion ?? ''} onRefreshProject={onRefreshProject} />
-      </PropertySection>
+      </PropertySection> : null}
     </>
   );
+}
+
+function FeatureTab({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return <button type="button" role="tab" aria-selected={active} className={active ? 'active' : undefined} onClick={onClick}>{label}</button>;
 }
 
 function GeneralizationsSection({
@@ -239,6 +276,10 @@ function GeneralizationsSection({
   onRefreshProject: () => Promise<boolean>;
 }) {
   const directIds = projection?.directSuperClasses.map((type) => type.id) ?? umlClass.superClassIds ?? [];
+  const directSupertypes = projection?.directSuperClasses ?? directIds
+    .map((id) => project.umlModel.classes.find((candidate) => candidate.id === id))
+    .filter((candidate): candidate is UmlClassDto => Boolean(candidate))
+    .map((candidate) => ({ id: candidate.id, name: candidate.name, qualifiedName: candidate.qualifiedName ?? candidate.name, kind: 'CLASS' as const }));
   const candidates = project.umlModel.classes.filter(
     (candidate) => candidate.id !== umlClass.id && !directIds.includes(candidate.id),
   );
@@ -248,11 +289,33 @@ function GeneralizationsSection({
   const inheritedFeatures = [...(projection?.attributes ?? []), ...(projection?.operations ?? [])].filter(
     (feature) => feature.inherited,
   );
-  const [candidateId, setCandidateId] = useState(candidates[0]?.id ?? '');
-  const [localFeatureId, setLocalFeatureId] = useState(localFeatures[0]?.id ?? '');
-  const [targetFeatureId, setTargetFeatureId] = useState(inheritedFeatures[0]?.id ?? '');
+  const [selectedSupertypeId, setSelectedSupertypeId] = useState(directIds[0] ?? '');
+  const [showCandidates, setShowCandidates] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const selectedSupertype = directSupertypes.find((type) => type.id === selectedSupertypeId)
+    ?? directSupertypes[0];
+  const selectedChain = selectedSupertype
+    ? inheritanceChain(project, umlClass.id, selectedSupertype.id)
+    : [umlClass.name];
+  const selectedInheritedFeatures = selectedSupertype
+    ? inheritedFeatures.filter((feature) =>
+      feature.definingClassifier.id === selectedSupertype.id
+      || selectedChain.includes(feature.definingClassifier.name),
+    )
+    : [];
+  const selectedInheritedAttributes = selectedInheritedFeatures.filter(
+    (feature) => feature.kind === 'ATTRIBUTE',
+  );
+  const selectedInheritedOperations = selectedInheritedFeatures.filter(
+    (feature) => feature.kind === 'OPERATION',
+  );
+  const redefinitionResolutions = localFeatures
+    .filter((feature) => feature.redefinedFeatures.length > 0)
+    .map((feature) => ({ feature, targets: feature.redefinedFeatures }));
+  const redefinedTargetIds = new Set(
+    redefinitionResolutions.flatMap(({ targets }) => targets.map((target) => target.id)),
+  );
 
   const run = async (command: () => Promise<unknown>, success: string) => {
     if (!revision) {
@@ -277,106 +340,100 @@ function GeneralizationsSection({
 
   return (
     <PropertySection title="Generalizations">
-      <label className="property-checkbox">
-        <input
-          type="checkbox"
-          checked={projection?.abstractClass ?? umlClass.abstract ?? false}
-          disabled={busy || !revision}
-          onChange={(event) => {
-            const abstractClass = event.target.checked;
-            void run(
-              () => modelCommandApi.updateClass(project.project.id, umlClass.id, {
-                expectedRevision: revision ?? '',
-                draft: {
-                  ...umlClass,
-                  abstractClass,
-                  superClassIds: directIds,
-                  visibility: 'PUBLIC',
-                  qualifiedName: projection?.qualifiedName ?? umlClass.name,
-                },
-              }),
-              abstractClass ? 'Class marked as abstract.' : 'Class marked as concrete.',
-            );
-          }}
-        />
-        Abstract class
-      </label>
-
-      <div className="generalization-chain" aria-label="Inheritance chain">
-        <strong>{umlClass.name}</strong>
-        {(projection?.generalizationOrder ?? []).map((type) => (
-          <span key={type.id}>→ {type.name}</span>
-        ))}
-      </div>
-
-      <h5>Current direct supertypes</h5>
-      {directIds.length === 0 ? <p className="property-empty">No direct supertypes.</p> : null}
-      {(projection?.directSuperClasses ?? []).map((type) => (
-        <div className="generalization-row" key={type.id}>
-          <button type="button" onClick={() => appStoreActions.select({ view: 'class-diagram', type: 'class', id: type.id })}>
-            {type.name}
-          </button>
-          <DeleteActionButton
-            label="Delete generalization"
-            confirmMessage={`Delete the generalization from ${umlClass.name} to ${type.name}?`}
-            onDelete={() => run(
-              () => modelCommandApi.setGeneralizations(project.project.id, umlClass.id, {
-                expectedRevision: revision ?? '',
-                draft: { supertypeIds: directIds.filter((id) => id !== type.id) },
-              }),
-              `Generalization to ${type.name} deleted.`,
-            )}
-          />
-        </div>
-      ))}
-
       <div className="property-inline-command">
-        <label><span>Superclass candidate</span><select value={candidateId} onChange={(event) => setCandidateId(event.target.value)}>
-          {candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+        <label className="property-field"><span>Generalization</span><select aria-label="Generalization" value={selectedSupertype?.id ?? ''} onChange={(event) => setSelectedSupertypeId(event.target.value)}>
+          {directSupertypes.length === 0 ? <option value="">No direct generalizations</option> : null}
+          {directSupertypes.map((type) => <option key={type.id} value={type.id}>{umlClass.name} → {type.name}</option>)}
         </select></label>
-        <button type="button" disabled={!candidateId || busy || !revision} onClick={() => void run(
-          () => modelCommandApi.setGeneralizations(project.project.id, umlClass.id, {
-            expectedRevision: revision ?? '', draft: { supertypeIds: [...directIds, candidateId] },
-          }),
-          'Generalization added.',
-        )}>Add supertype</button>
+        <button type="button" disabled={busy || !revision} onClick={() => setShowCandidates(true)}>Add Generalization</button>
       </div>
 
-      <h5>Inherited features</h5>
-      {inheritedFeatures.length === 0 ? <p className="property-empty">No inherited features.</p> : inheritedFeatures.map((feature) => (
-        <div className="inherited-feature" key={`${feature.kind}-${feature.id}`}>
-          <strong>{feature.name} : {feature.type}</strong>
-          <span>Inherited from {feature.definingClassifier.name} · read-only</span>
-        </div>
-      ))}
+      {showCandidates ? <section className="generalization-candidates" aria-label="Superclass candidates">
+        <h5>Superclass candidates</h5>
+        {candidates.length === 0 ? <p className="property-empty">No superclass candidates are available.</p> : candidates.map((candidate) => (
+          <button type="button" className="generalization-candidate" key={candidate.id} disabled={busy || !revision} onClick={() => void run(
+          () => modelCommandApi.setGeneralizations(project.project.id, umlClass.id, {
+            expectedRevision: revision ?? '', draft: { supertypeIds: [...directIds, candidate.id] },
+          }),
+          `Generalization to ${candidate.name} added.`,
+        )}>{candidate.name}<small>Add direct supertype</small></button>))}
+      </section> : null}
 
-      {localFeatures.length > 0 && inheritedFeatures.length > 0 ? (
-        <div className="property-redefinition">
-          <h5>Explicit redefinition</h5>
-          <label><span>Local feature</span><select value={localFeatureId} onChange={(event) => setLocalFeatureId(event.target.value)}>
-            {localFeatures.map((feature) => <option key={feature.id} value={feature.id}>{feature.name} ({feature.kind})</option>)}
-          </select></label>
-          <label><span>Inherited target</span><select value={targetFeatureId} onChange={(event) => setTargetFeatureId(event.target.value)}>
-            {inheritedFeatures.map((feature) => <option key={feature.id} value={feature.id}>{feature.definingClassifier.name}::{feature.name}</option>)}
-          </select></label>
-          <button type="button" disabled={busy || !revision || !localFeatureId || !targetFeatureId} onClick={() => {
-            const local = localFeatures.find((feature) => feature.id === localFeatureId);
-            void run(() => modelCommandApi.setRedefinition(project.project.id, umlClass.id, {
+      {selectedSupertype ? <section className="generalization-details">
+        <h5>Generalization Details</h5>
+        <label className="property-field"><span>Subclass</span><input readOnly value={umlClass.name} /></label>
+        <label className="property-field"><span>Superclass</span><input readOnly value={selectedSupertype.name} /></label>
+        <label className="property-field"><span>Inheritance chain</span><input readOnly value={selectedChain.join(' → ')} /></label>
+        <DeleteActionButton
+          label="Delete generalization"
+          confirmMessage={`Delete the generalization from ${umlClass.name} to ${selectedSupertype.name}?`}
+          onDelete={() => run(
+            () => modelCommandApi.setGeneralizations(project.project.id, umlClass.id, {
               expectedRevision: revision ?? '',
-              draft: {
-                featureKind: local?.kind === 'OPERATION' ? 'OPERATION' : 'ATTRIBUTE',
-                localFeatureId,
-                redefinedFeatureIds: [targetFeatureId],
-              },
-            }), 'Explicit redefinition saved.');
-          }}>Confirm redefinition</button>
-          <p className="property-hint">The backend validates ownership and compatibility. Equal names alone do not create a redefinition.</p>
-        </div>
-      ) : null}
+              draft: { supertypeIds: directIds.filter((id) => id !== selectedSupertype.id) },
+            }),
+            `Generalization to ${selectedSupertype.name} deleted.`,
+          )}
+        />
+      </section> : null}
+
+      <section className="inherited-feature-section">
+        <h5>Inherited Attributes</h5>
+        {selectedInheritedAttributes.length === 0 ? <p className="property-empty">No inherited attributes for the selected generalization.</p> : selectedInheritedAttributes.map((feature) => (
+          <InheritedFeature key={feature.id} feature={feature} redefinedTargetIds={redefinedTargetIds} />
+        ))}
+      </section>
+
+      <section className="inherited-feature-section">
+        <h5>Inherited Operations</h5>
+        {selectedInheritedOperations.length === 0 ? <p className="property-empty">No inherited operations for the selected generalization.</p> : selectedInheritedOperations.map((feature) => (
+          <InheritedFeature key={feature.id} feature={feature} redefinedTargetIds={redefinedTargetIds} />
+        ))}
+      </section>
+
+      {redefinitionResolutions.length > 0 ? <section className="property-redefinition">
+        <h5>Feature Resolution</h5>
+        {redefinitionResolutions.map(({ feature, targets }) => <div className="redefinition-resolution" key={feature.id}>
+          <strong>{umlClass.name}::{feature.name} : {feature.type}</strong>
+          {targets.map((target) => <span key={target.id}>redefines {target.qualifiedName}</span>)}
+        </div>)}
+        <p className="property-hint">Redefinitions are explicit, stable relationships validated by the backend. Matching feature names alone do not create one.</p>
+      </section> : null}
 
       {feedback ? <p role={feedback.kind === 'error' ? 'alert' : 'status'} className={`property-feedback ${feedback.kind}`}>{feedback.text}</p> : null}
     </PropertySection>
   );
+}
+
+function InheritedFeature({
+  feature,
+  redefinedTargetIds,
+}: {
+  feature: ClassProjectionDto['attributes'][number] | ClassProjectionDto['operations'][number];
+  redefinedTargetIds: Set<string>;
+}) {
+  return (
+    <div className="inherited-feature">
+      <strong>{feature.name} : {feature.type}</strong>
+      <span>{redefinedTargetIds.has(feature.id)
+        ? `Redefined locally from ${feature.definingClassifier.name} · read-only`
+        : `Inherited from ${feature.definingClassifier.name} · read-only`}</span>
+    </div>
+  );
+}
+
+function inheritanceChain(project: ProjectDto, subclassId: string, directSupertypeId: string): string[] {
+  const names = [project.umlModel.classes.find((candidate) => candidate.id === subclassId)?.name ?? subclassId];
+  const visited = new Set<string>([subclassId]);
+  let currentId: string | undefined = directSupertypeId;
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const current = project.umlModel.classes.find((candidate) => candidate.id === currentId);
+    if (!current) break;
+    names.push(current.name);
+    currentId = current.superClassIds?.[0];
+  }
+  return names;
 }
 
 function ClassAssociationAccess({

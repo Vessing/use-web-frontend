@@ -6,11 +6,10 @@ import { useAppStore } from '../../../state';
 interface ModalLayerProps {
   project: ProjectDto | null;
   readModel: ProjectReadModelDto | null;
-  onProjectChange: (project: ProjectDto) => void;
   onRefreshProject: () => Promise<boolean>;
 }
 
-export function ModalLayer({ project, readModel, onProjectChange, onRefreshProject }: ModalLayerProps) {
+export function ModalLayer({ project, readModel, onRefreshProject }: ModalLayerProps) {
   const modal = useAppStore((state) => state.modal);
 
   if (!modal || !project) {
@@ -24,7 +23,6 @@ export function ModalLayer({ project, readModel, onProjectChange, onRefreshProje
         modal={modal}
         project={project}
         expectedRevision={readModel?.readVersion ?? ''}
-        onProjectChange={onProjectChange}
         onRefreshProject={onRefreshProject}
       />
       <ObjectDiagramModals

@@ -19,7 +19,7 @@ export function TopBar({
   isRefreshing = false,
   onRefresh,
 }: TopBarProps) {
-  const displayName = projectName?.trim() || projectId;
+  const displayName = projectName?.trim() || 'Project';
 
   return (
     <header className="top-bar">
@@ -40,7 +40,7 @@ export function TopBar({
         >
           {isRefreshing ? 'Refreshing...' : 'Refresh'}
         </button>
-        <CheckConstraintsButton projectId={projectId} />
+        <CheckConstraintsButton projectId={projectId} projectName={displayName} />
       </div>
     </header>
   );

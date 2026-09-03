@@ -5,6 +5,7 @@ import type {
   ApplyModelTextResponseDto,
   ImportProjectRequestDto,
   ImportProjectResultDto,
+  LayoutDto,
   ProjectDto,
   ProjectReadModelDto,
   ProjectSummaryDto,
@@ -17,6 +18,7 @@ export interface ProjectApi {
   getProjectReadModel(projectId: string): Promise<ProjectReadModelDto>;
   getProjects(): Promise<ProjectSummaryDto[]>;
   saveProject(projectId: string, project: ProjectDto): Promise<ProjectDto>;
+  saveLayout(projectId: string, layout: LayoutDto): Promise<LayoutDto>;
   importProject(request: ImportProjectRequestDto): Promise<ImportProjectResultDto>;
   applyModelText(
     projectId: string,
@@ -45,6 +47,8 @@ export function createProjectApi(client: HttpClient = httpClient): ProjectApi {
           ProjectDto
         >(`/projects/${encodeURIComponent(projectId)}`, toBackendProjectDto(project))
         .then(normalizeProjectDto),
+    saveLayout: (projectId, layout) =>
+      client.put(`/projects/${encodeURIComponent(projectId)}/layout`, layout),
     importProject: (request) => client.post('/projects/import', request),
     applyModelText: (projectId, request) =>
       client

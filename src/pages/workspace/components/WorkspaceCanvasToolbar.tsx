@@ -16,7 +16,7 @@ export function WorkspaceCanvasToolbar({ activeView, project }: WorkspaceCanvasT
 
   if (activeView === 'object-diagram') {
     return (
-      <nav className="canvas-create-toolbar" aria-label="Create object diagram elements">
+      <nav className="canvas-create-toolbar canvas-create-toolbar-object" aria-label="Create object diagram elements">
         <button
           type="button"
           className="create-tool create-tool-object"
@@ -50,7 +50,7 @@ export function WorkspaceCanvasToolbar({ activeView, project }: WorkspaceCanvasT
       <button
         type="button"
         className="create-tool create-tool-association"
-        disabled={disabled || project.umlModel.classes.length < 2}
+        disabled={disabled || project.umlModel.classes.length === 0}
         onClick={() => appStoreActions.openModal({ type: 'addClassAssociation' })}
       >
         Association

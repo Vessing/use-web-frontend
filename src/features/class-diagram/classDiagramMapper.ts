@@ -58,8 +58,22 @@ export function mapProjectToClassDiagram(
   return {
     nodes: [
       ...classNodes,
-      ...(project.umlModel.enumerations ?? []).map((item, index) => ({ id: item.id, type: 'modelType' as const, position: { x: 120 + ((classNodes.length + index) % 3) * fallbackSpacing.x, y: 120 + Math.floor((classNodes.length + index) / 3) * fallbackSpacing.y }, selected: selection?.view === 'class-diagram' && selection.type === 'enumeration' && selection.id === item.id, data: { ref: { elementType: 'enumeration' as const, elementId: item.id }, name: item.name, qualifiedName: item.qualifiedName, kind: 'enumeration' as const, entries: item.literals } })),
-      ...(project.umlModel.dataTypes ?? []).map((item, index) => ({ id: item.id, type: 'modelType' as const, position: { x: 120 + ((classNodes.length + (project.umlModel.enumerations ?? []).length + index) % 3) * fallbackSpacing.x, y: 120 + Math.floor((classNodes.length + (project.umlModel.enumerations ?? []).length + index) / 3) * fallbackSpacing.y }, selected: selection?.view === 'class-diagram' && selection.type === 'dataType' && selection.id === item.id, data: { ref: { elementType: 'dataType' as const, elementId: item.id }, name: item.name, qualifiedName: item.qualifiedName, kind: 'dataType' as const, entries: item.properties.map((property) => `${property.name} : ${property.type}`) } })),
+      ...(project.umlModel.enumerations ?? []).map((item, index) => mapModelTypeNode(
+        item,
+        'enumeration',
+        item.literals,
+        classNodes.length + index,
+        layoutByElementId.get(item.id),
+        selection,
+      )),
+      ...(project.umlModel.dataTypes ?? []).map((item, index) => mapModelTypeNode(
+        item,
+        'dataType',
+        item.properties.map((property) => `${property.name} : ${property.type}`),
+        classNodes.length + (project.umlModel.enumerations ?? []).length + index,
+        layoutByElementId.get(item.id),
+        selection,
+      )),
       ...hubAssociations.map((association) => ({
         id: `nary:${association.id}`,
         type: 'naryHub' as const,
@@ -171,6 +185,32 @@ function mapClassNode(
   };
 }
 
+function mapModelTypeNode(
+  item: { id: Id; name: string; qualifiedName?: string | null },
+  kind: 'enumeration' | 'dataType',
+  entries: string[],
+  index: number,
+  layout: DiagramLayoutDto['nodes'][number] | undefined,
+  selection: SelectionState,
+): DiagramNode {
+  return {
+    id: item.id,
+    type: 'modelType',
+    position: {
+      x: layout?.x ?? 120 + (index % 3) * fallbackSpacing.x,
+      y: layout?.y ?? 120 + Math.floor(index / 3) * fallbackSpacing.y,
+    },
+    selected: selection?.view === 'class-diagram' && selection.type === kind && selection.id === item.id,
+    data: {
+      ref: { elementType: kind, elementId: item.id },
+      name: item.name,
+      qualifiedName: item.qualifiedName ?? undefined,
+      kind,
+      entries,
+    },
+  };
+}
+
 function mapAssociationEdge(
   association: UmlAssociationDto,
   classIds: Set<Id>,
@@ -189,7 +229,7 @@ function mapAssociationEdge(
         data: {
           ref: { elementType: 'association' as const, elementId: association.id },
           endLabel: {
-            roleName: end.roleName,
+            roleName: end.roleName ?? '',
             multiplicity: formatMultiplicity(end.multiplicity),
             aggregationKind: end.aggregationKind ?? 'NONE',
           },
@@ -222,12 +262,12 @@ function mapAssociationEdge(
         ref: { elementType: 'association', elementId: association.id },
         associationName: association.name,
         sourceEnd: {
-          roleName: sourceEnd.roleName,
+          roleName: sourceEnd.roleName ?? '',
           multiplicity: formatMultiplicity(sourceEnd.multiplicity),
           aggregationKind: sourceEnd.aggregationKind ?? 'NONE',
         },
         targetEnd: {
-          roleName: targetEnd.roleName,
+          roleName: targetEnd.roleName ?? '',
           multiplicity: formatMultiplicity(targetEnd.multiplicity),
           aggregationKind: targetEnd.aggregationKind ?? 'NONE',
         },

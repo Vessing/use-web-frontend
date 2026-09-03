@@ -14,7 +14,7 @@ describe('DefinitionPropertiesSection', () => {
     const create = vi.spyOn(modelCommandApi, 'createDefinition').mockResolvedValue({ command: 'CREATE_DEFINITION', revisionScope: 'MODEL', revision: '19', result: definition, affectedElements: [] });
     render(<DefinitionPropertiesSection project={emptyProject} ownerKind="CLASS" ownerId="class-account" ownerName="Account" revision="18" onRefreshProject={refresh} />);
 
-    await user.click(screen.getByRole('button', { name: 'Operation' }));
+    await user.selectOptions(screen.getByLabelText('Definition kind'), 'OPERATION_DEF');
     await user.type(screen.getByLabelText('Definition name'), 'adjusted');
     await user.clear(screen.getByLabelText('Result type'));
     await user.type(screen.getByLabelText('Result type'), 'Integer');

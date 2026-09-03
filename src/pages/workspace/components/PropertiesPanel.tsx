@@ -8,6 +8,7 @@ interface PropertiesPanelProps {
   activeView: WorkspaceView;
   project: ProjectDto | null;
   readModel: ProjectReadModelDto | null;
+  onCollapse: () => void;
   onProjectChange: (project: ProjectDto) => void;
   onRefreshProject: () => Promise<boolean>;
 }
@@ -16,6 +17,7 @@ export function PropertiesPanel({
   activeView,
   project,
   readModel,
+  onCollapse,
   onProjectChange,
   onRefreshProject,
 }: PropertiesPanelProps) {
@@ -23,7 +25,18 @@ export function PropertiesPanel({
 
   return (
     <aside className="properties-panel" aria-label="Properties Panel">
-      <h2>Properties</h2>
+      <header className="properties-panel-header">
+        <h2>Properties</h2>
+        <button
+          type="button"
+          className="workspace-sidebar-toggle"
+          aria-label="Collapse Properties"
+          title="Collapse Properties"
+          onClick={onCollapse}
+        >
+          <span aria-hidden="true">›</span>
+        </button>
+      </header>
       <div className="properties-panel-scroll">
         {activeView === 'class-diagram' ? (
           <ClassDiagramPropertiesPanel

@@ -24,6 +24,62 @@ describe('OperationInvocationPanel', () => {
     expect(getAppState().invocationResult?.status).toBe('SUCCEEDED');
     expect(getAppState().activeBottomPanelTab).toBe('invocation-results');
   });
+
+  it('offers inherited operations when no read-model projection is available', () => {
+    const inheritedProject: ProjectDto = {
+      ...project,
+      umlModel: {
+        ...project.umlModel,
+        classes: [
+          {
+            id: 'class-parent',
+            name: 'Parent',
+            attributes: [],
+            operations: [{ id: 'operation-parent-reset', name: 'reset', returnType: 'Void', parameters: [] }],
+          },
+          {
+            ...project.umlModel.classes[0],
+            superClassIds: ['class-parent'],
+          },
+        ],
+      },
+    };
+
+    render(<OperationInvocationPanel project={inheritedProject} object={inheritedProject.objectModel.objects[0]} readVersion="18" onRefreshProject={vi.fn()} />);
+
+    expect(screen.getByRole('option', { name: 'reset() : Void - inherited from Parent' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'deposit(amount: Integer) : Boolean' })).toBeInTheDocument();
+  });
+
+  it('adds hierarchy operations omitted by a stale read-model projection', () => {
+    const inheritedProject: ProjectDto = {
+      ...project,
+      umlModel: {
+        ...project.umlModel,
+        classes: [
+          {
+            id: 'class-parent',
+            name: 'Parent',
+            attributes: [],
+            operations: [{ id: 'operation-parent-reset', name: 'reset', returnType: 'Void', parameters: [] }],
+          },
+          { ...project.umlModel.classes[0], superClassIds: ['class-parent'] },
+        ],
+      },
+    };
+    const staleReadModel: ProjectReadModelDto = {
+      ...readModel,
+      classes: [{
+        ...readModel.classes[0],
+        operations: readModel.classes[0].operations,
+      }],
+    };
+
+    render(<OperationInvocationPanel project={inheritedProject} object={inheritedProject.objectModel.objects[0]} readModel={staleReadModel} readVersion="18" onRefreshProject={vi.fn()} />);
+
+    expect(screen.getByRole('option', { name: 'reset() : Void - inherited from Parent' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'deposit(amount: Integer) : Boolean' })).toBeInTheDocument();
+  });
 });
 
 const project: ProjectDto = { formatVersion: '1', project: { id: 'project-1', name: 'Accounts' }, umlModel: { classes: [{ id: 'class-account', name: 'Account', attributes: [], operations: [{ id: 'operation-deposit', name: 'deposit', returnType: 'Boolean', query: true, parameters: [{ id: 'parameter-amount', name: 'amount', type: 'Integer', direction: 'IN', position: 0 }] }] }], associations: [], invariants: [] }, objectModel: { id: 'snapshot-before', objects: [{ id: 'object-account', name: 'account1', classId: 'class-account', slots: [] }], links: [] }, layout: { classDiagram: { nodes: [] }, objectDiagram: { nodes: [] } } };

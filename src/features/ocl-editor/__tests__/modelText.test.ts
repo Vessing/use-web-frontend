@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ProjectDto } from '../../../api';
-import { getEditableModelText, renderUseModelText } from '../modelText';
+import { getEditableModelText } from '../modelText';
 
 describe('OCL model text rendering', () => {
   it('uses persisted backend model text when available', () => {
@@ -16,7 +16,7 @@ describe('OCL model text rendering', () => {
     expect(getEditableModelText(project)).toBe('model ImportedLibrary\nclass User\nend\n');
   });
 
-  it('renders current UML model text when persisted model text is older than the project', () => {
+  it('preserves persisted USE source even when the project is updated later', () => {
     const project = createLibraryProject({
       project: {
         id: 'project-library',
@@ -32,34 +32,27 @@ describe('OCL model text rendering', () => {
       },
     });
 
-    expect(getEditableModelText(project)).toContain('class User');
-    expect(getEditableModelText(project)).not.toContain('OldUser');
+    expect(getEditableModelText(project)).toContain('class OldUser');
+    expect(getEditableModelText(project)).not.toContain('class User');
   });
 
-  it('renders a USE-style text document from the current project model', () => {
-    expect(renderUseModelText(createLibraryProject())).toContain(
-      [
-        'model Library',
-        '',
-        'class User',
-        'attributes',
-        '  books : Integer',
-        'operations',
-        '  borrow(book : Book) : Boolean',
-        'end',
-      ].join('\n'),
-    );
-    expect(renderUseModelText(createLibraryProject())).toContain(
-      [
-        'association Borrows between',
-        '  User[1] role borrower',
-        '  Book[0..*] role borrowedBooks',
-        'end',
-      ].join('\n'),
-    );
-    expect(renderUseModelText(createLibraryProject())).toContain(
-      ['constraints', 'context User inv maxBooks:', '  self.books <= 5'].join('\n'),
-    );
+  it('preserves imports and original source when the project is updated later', () => {
+    const project = createLibraryProject({
+      project: { id: 'project-library', name: 'Library', updatedAt: '2026-08-03T10:00:00.000Z' },
+      modelText: {
+        projectId: 'project-library',
+        modelText: 'import * from "shared/types.use"\nmodel ImportedLibrary\nclass OldUser end\n',
+        format: 'USE_MODEL_TEXT',
+        updatedAt: '2026-08-03T09:00:00.000Z',
+      },
+    });
+
+    expect(getEditableModelText(project)).toContain('import * from "shared/types.use"');
+    expect(getEditableModelText(project)).toContain('class OldUser');
+  });
+
+  it('does not generate text from the frontend model when backend text is absent', () => {
+    expect(getEditableModelText(createLibraryProject())).toBe('');
   });
 });
 

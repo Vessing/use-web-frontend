@@ -24,6 +24,13 @@ export function createModelCommandApi(client: HttpClient = httpClient) {
     `/projects/${encodeURIComponent(projectId)}/commands/classes/${encodeURIComponent(classId)}`;
 
   return {
+    createClass: (
+      projectId: string,
+      request: MutationCommandRequestDto<UmlClassDto>,
+    ) => client.post<MutationResultDto<UmlClassDto>, typeof request>(
+      `/projects/${encodeURIComponent(projectId)}/commands/classes`,
+      request,
+    ),
     createInvariant: (
       projectId: string,
       request: MutationCommandRequestDto<UmlInvariantDto>,

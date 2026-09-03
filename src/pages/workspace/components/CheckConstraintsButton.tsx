@@ -5,11 +5,13 @@ import { appStoreActions } from '../../../state';
 
 interface CheckConstraintsButtonProps {
   projectId: string;
+  projectName: string;
   validateProject?: typeof validationApi.validateProject;
 }
 
 export function CheckConstraintsButton({
   projectId,
+  projectName,
   validateProject = validationApi.validateProject,
 }: CheckConstraintsButtonProps) {
   const [isChecking, setIsChecking] = useState(false);
@@ -20,7 +22,7 @@ export function CheckConstraintsButton({
     appStoreActions.addConsoleLog({
       level: 'info',
       source: 'validation',
-      message: `Check Constraints started for project ${projectId}.`,
+      message: `Check Constraints started for project "${projectName}".`,
     });
 
     try {

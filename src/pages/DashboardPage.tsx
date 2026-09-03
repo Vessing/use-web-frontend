@@ -95,7 +95,11 @@ export function DashboardPage({
     }
   };
 
-  const handleImportUseFile = async (file: File, modelText: string) => {
+  const handleImportUseFile = async (
+    file: File,
+    modelText: string,
+    sourceFiles: Record<string, string>,
+  ) => {
     const project = await createProject({
       name: projectNameFromFile(file.name),
       description: `Imported from ${file.name}`,
@@ -111,6 +115,7 @@ export function DashboardPage({
       sourceFormat: 'use',
       sourceOrigin: 'open-existing',
       baseVersion: null,
+      sourceFiles,
     });
 
     if (response.success && (response.diagnostics ?? []).length === 0) {

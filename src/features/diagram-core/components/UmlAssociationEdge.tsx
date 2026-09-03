@@ -6,8 +6,9 @@ import {
 } from '@xyflow/react';
 import type { ReactNode } from 'react';
 
-import type { AssociationEndLabel, UmlAssociationEdgeData } from '../types';
+import type { UmlAssociationEdgeData } from '../types';
 import { edgePoint } from './edgeLabelGeometry';
+import { UmlAggregationDiamond } from './UmlAggregationDiamond';
 
 export function UmlAssociationEdge(props: EdgeProps) {
   const {
@@ -22,7 +23,7 @@ export function UmlAssociationEdge(props: EdgeProps) {
     selected,
   } = props;
   const data = props.data as UmlAssociationEdgeData;
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const [defaultEdgePath, defaultLabelX, defaultLabelY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -30,8 +31,18 @@ export function UmlAssociationEdge(props: EdgeProps) {
     targetY,
     targetPosition,
   });
-  const sourceLabel = edgePoint(sourceX, sourceY, targetX, targetY, 0.18);
-  const targetLabel = edgePoint(sourceX, sourceY, targetX, targetY, 0.82);
+  const selfAssociation = props.source === props.target;
+  const geometry = selfAssociation
+    ? getSelfAssociationGeometry(sourceX, sourceY, targetX, targetY)
+    : {
+        edgePath: defaultEdgePath,
+        labelX: defaultLabelX,
+        labelY: defaultLabelY,
+        sourceLabel: edgePoint(sourceX, sourceY, targetX, targetY, 0.18),
+        targetLabel: edgePoint(sourceX, sourceY, targetX, targetY, 0.82),
+        sourceDiamondToward: { x: targetX, y: targetY },
+        targetDiamondToward: { x: sourceX, y: sourceY },
+      };
   const hasError = data.validationState === 'error';
   const hasWarning = data.validationState === 'warning';
   const edgeStateClass = hasError ? 'error' : hasWarning ? 'warning' : '';
@@ -46,11 +57,25 @@ export function UmlAssociationEdge(props: EdgeProps) {
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} className={className} />
+      <BaseEdge id={id} path={geometry.edgePath} markerEnd={markerEnd} className={className} />
+      <UmlAggregationDiamond
+        x={sourceX}
+        y={sourceY}
+        towardX={geometry.sourceDiamondToward.x}
+        towardY={geometry.sourceDiamondToward.y}
+        kind={data.sourceEnd.aggregationKind}
+      />
+      <UmlAggregationDiamond
+        x={targetX}
+        y={targetY}
+        towardX={geometry.targetDiamondToward.x}
+        towardY={geometry.targetDiamondToward.y}
+        kind={data.targetEnd.aggregationKind}
+      />
       <EdgeLabelRenderer>
         <AssociationLabel
-          x={labelX}
-          y={labelY}
+          x={geometry.labelX}
+          y={geometry.labelY}
           className={['edge-label', 'edge-label-center', labelStateClass]
             .filter(Boolean)
             .join(' ')}
@@ -58,26 +83,48 @@ export function UmlAssociationEdge(props: EdgeProps) {
           {data.associationName}
         </AssociationLabel>
         <AssociationLabel
-          x={sourceLabel.x}
-          y={sourceLabel.y}
+          x={geometry.sourceLabel.x}
+          y={geometry.sourceLabel.y}
           className="edge-label edge-label-end"
         >
-          {aggregationSymbol(data.sourceEnd.aggregationKind)}{data.sourceEnd.roleName} {data.sourceEnd.multiplicity}
+          {data.sourceEnd.roleName} {data.sourceEnd.multiplicity}
         </AssociationLabel>
         <AssociationLabel
-          x={targetLabel.x}
-          y={targetLabel.y}
+          x={geometry.targetLabel.x}
+          y={geometry.targetLabel.y}
           className="edge-label edge-label-end"
         >
-          {aggregationSymbol(data.targetEnd.aggregationKind)}{data.targetEnd.roleName} {data.targetEnd.multiplicity}
+          {data.targetEnd.roleName} {data.targetEnd.multiplicity}
         </AssociationLabel>
       </EdgeLabelRenderer>
     </>
   );
 }
 
-function aggregationSymbol(kind?: AssociationEndLabel['aggregationKind']) {
-  return kind === 'COMPOSITE' ? '\u25c6 ' : kind === 'SHARED' ? '\u25c7 ' : '';
+export function getSelfAssociationGeometry(
+  sourceX: number,
+  sourceY: number,
+  targetX: number,
+  targetY: number,
+) {
+  const horizontalOffset = 76;
+  const verticalOffset = 88;
+  const loopY = Math.max(sourceY, targetY) + verticalOffset;
+
+  return {
+    edgePath: [
+      `M ${sourceX} ${sourceY}`,
+      `C ${sourceX + horizontalOffset} ${sourceY}, ${sourceX + horizontalOffset} ${loopY}, ${sourceX + 40} ${loopY}`,
+      `L ${targetX - 40} ${loopY}`,
+      `C ${targetX - horizontalOffset} ${loopY}, ${targetX - horizontalOffset} ${targetY}, ${targetX} ${targetY}`,
+    ].join(' '),
+    labelX: (sourceX + targetX) / 2,
+    labelY: loopY + 16,
+    sourceLabel: { x: sourceX + 46, y: sourceY + 20 },
+    targetLabel: { x: targetX - 46, y: targetY + 20 },
+    sourceDiamondToward: { x: sourceX + 1, y: sourceY },
+    targetDiamondToward: { x: targetX - 1, y: targetY },
+  };
 }
 
 interface AssociationLabelProps {

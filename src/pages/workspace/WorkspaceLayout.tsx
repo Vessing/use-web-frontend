@@ -20,9 +20,12 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
   const [readModel, setReadModel] = useState<ProjectReadModelDto | null>(null);
   const [isLoadingProject, setIsLoadingProject] = useState(true);
   const [isRefreshingProject, setIsRefreshingProject] = useState(false);
+  const [isExplorerOpen, setIsExplorerOpen] = useState(true);
+  const [isPropertiesPanelOpen, setIsPropertiesPanelOpen] = useState(true);
   const [projectError, setProjectError] = useState<string | null>(null);
   const layoutDraft = useAppStore((state) => state.layoutDraft);
   const projectRef = useRef<ProjectDto | null>(project);
+  const loadRequestRef = useRef(0);
   const usesWorkspaceSidebars = activeView !== 'ocl';
 
   useEffect(() => {
@@ -31,6 +34,7 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
 
   const loadProject = useCallback(
     async (options?: { showConsoleFeedback?: boolean }) => {
+      const requestId = ++loadRequestRef.current;
       setIsLoadingProject(true);
       setProjectError(null);
 
@@ -39,6 +43,9 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
           projectApi.getProject(projectId),
           projectApi.getProjectReadModel(projectId),
         ]);
+        if (requestId !== loadRequestRef.current) {
+          return true;
+        }
         setProject(loadedProject);
         setReadModel(loadedReadModel);
         projectRef.current = loadedProject;
@@ -53,6 +60,9 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
 
         return true;
       } catch (error) {
+        if (requestId !== loadRequestRef.current) {
+          return true;
+        }
         setProject(null);
         setReadModel(null);
         setProjectError('The project model could not be loaded.');
@@ -67,7 +77,9 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
 
         return false;
       } finally {
-        setIsLoadingProject(false);
+        if (requestId === loadRequestRef.current) {
+          setIsLoadingProject(false);
+        }
       }
     },
     [projectId],
@@ -118,14 +130,20 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
       appStoreActions.addConsoleLog({
         level: 'debug',
         source: 'api',
-        message: `Saving layout for project ${projectId}.`,
+        message: `Saving layout for project "${currentProject.project.name}".`,
       });
 
       void projectApi
-        .saveProject(projectId, nextProject)
-        .then((savedProject) => {
-          setProject(savedProject);
-          projectRef.current = savedProject;
+        .saveLayout(projectId, nextProject.layout)
+        .then((savedLayout) => {
+          setProject((latestProject) => {
+            if (!latestProject) {
+              return latestProject;
+            }
+            const updatedProject = { ...latestProject, layout: savedLayout };
+            projectRef.current = updatedProject;
+            return updatedProject;
+          });
 
           if (getAppState().layoutDraft === draftToSave) {
             appStoreActions.markLayoutSaved();
@@ -160,16 +178,35 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
         onRefresh={handleRefresh}
       />
       <div
-        className={usesWorkspaceSidebars ? 'workspace-grid' : 'workspace-grid workspace-grid-full'}
+        className={usesWorkspaceSidebars
+          ? [
+              'workspace-grid',
+              !isExplorerOpen ? 'workspace-grid-explorer-collapsed' : '',
+              !isPropertiesPanelOpen ? 'workspace-grid-properties-collapsed' : '',
+            ].filter(Boolean).join(' ')
+          : 'workspace-grid workspace-grid-full'}
       >
-        {usesWorkspaceSidebars ? (
+        {usesWorkspaceSidebars && isExplorerOpen ? (
           <ExplorerSidebar
             activeView={activeView}
             project={project}
             readModel={readModel}
             isLoading={isLoadingProject}
             error={projectError}
+            onCollapse={() => setIsExplorerOpen(false)}
           />
+        ) : usesWorkspaceSidebars ? (
+          <aside className="workspace-sidebar-rail workspace-sidebar-rail-left" aria-label="Explorer collapsed">
+            <button
+              type="button"
+              className="workspace-sidebar-toggle"
+              aria-label="Expand Explorer"
+              title="Expand Explorer"
+              onClick={() => setIsExplorerOpen(true)}
+            >
+              <span aria-hidden="true">›</span>
+            </button>
+          </aside>
         ) : null}
         <MainWorkspaceView
           activeView={activeView}
@@ -177,22 +214,35 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
           isLoadingProject={isLoadingProject}
           projectError={projectError}
           onProjectChange={setProject}
+          onRefreshProject={() => loadProject()}
         />
-        {usesWorkspaceSidebars ? (
+        {usesWorkspaceSidebars && isPropertiesPanelOpen ? (
           <PropertiesPanel
             activeView={activeView}
             project={project}
             readModel={readModel}
+            onCollapse={() => setIsPropertiesPanelOpen(false)}
             onProjectChange={setProject}
             onRefreshProject={() => loadProject()}
           />
+        ) : usesWorkspaceSidebars ? (
+          <aside className="workspace-sidebar-rail workspace-sidebar-rail-right" aria-label="Properties collapsed">
+            <button
+              type="button"
+              className="workspace-sidebar-toggle"
+              aria-label="Expand Properties"
+              title="Expand Properties"
+              onClick={() => setIsPropertiesPanelOpen(true)}
+            >
+              <span aria-hidden="true">‹</span>
+            </button>
+          </aside>
         ) : null}
       </div>
       <BottomPanel project={project} diagnostics={readModel?.diagnostics ?? []} />
       <ModalLayer
         project={project}
         readModel={readModel}
-        onProjectChange={setProject}
         onRefreshProject={() => loadProject()}
       />
     </div>
@@ -202,10 +252,6 @@ export function WorkspaceLayout({ projectId, activeView }: WorkspaceLayoutProps)
 function mergeLayoutDraft(project: ProjectDto, layoutDraft: LayoutDraftState): ProjectDto {
   return {
     ...project,
-    project: {
-      ...project.project,
-      updatedAt: new Date().toISOString(),
-    },
     layout: {
       ...project.layout,
       classDiagram: {

@@ -182,7 +182,7 @@ describe('AssociationPropertiesPanel', () => {
     const name = screen.getByLabelText('Association Name');
     await userEvent.clear(name); await userEvent.type(name, 'Enrollment Updated');
     await userEvent.selectOptions(screen.getAllByLabelText('Classifier')[0], 'class-course');
-    const role = screen.getAllByLabelText('Role Name')[0];
+    const role = screen.getAllByLabelText('Role Name (optional)')[0];
     await userEvent.clear(role); await userEvent.type(role, 'participants');
     const multiplicity = screen.getAllByLabelText('Multiplicity')[0];
     await userEvent.clear(multiplicity); await userEvent.type(multiplicity, '0..*');
@@ -213,6 +213,19 @@ describe('AssociationPropertiesPanel', () => {
         })]),
       }),
     });
+  });
+
+  it('sends an empty role name as null', async () => {
+    const project = fixture();
+    const update = vi.spyOn(modelCommandApi, 'updateAssociation').mockImplementation(async (_projectId, _id, request) => ({ command: 'UPDATE_ASSOCIATION', revisionScope: 'MODEL', revision: '19', result: request.draft, affectedElements: [] }));
+    render(<AssociationPropertiesPanel project={project} association={project.umlModel.associations[0]} readVersion="18" onRefreshProject={vi.fn().mockResolvedValue(true)} />);
+
+    await userEvent.clear(screen.getAllByLabelText('Role Name (optional)')[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Changes' }));
+
+    expect(update).toHaveBeenCalledWith('project-library', 'association-enrollment', expect.objectContaining({
+      draft: expect.objectContaining({ ends: expect.arrayContaining([expect.objectContaining({ id: 'end-student', roleName: null })]) }),
+    }));
   });
 
   it('keeps the draft when the association no longer exists', async () => {

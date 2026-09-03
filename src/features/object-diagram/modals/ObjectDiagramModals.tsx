@@ -68,7 +68,8 @@ function AddObjectModal({
   const [errorFieldPath, setErrorFieldPath] = useState<string | null>(null);
   const [errorAttributeId, setErrorAttributeId] = useState<string | null>(null);
   const selectedClass = classes.find((item) => item.id === classId);
-  const attributes = effectiveStoredAttributes(project, classId);
+  const attributeGroups = effectiveStoredAttributeGroups(project, classId);
+  const attributes = attributeGroups.flatMap((group) => group.attributes);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const trimmedName = name.trim();
   const hasDuplicateName = project.objectModel.objects.some(
@@ -175,23 +176,28 @@ function AddObjectModal({
       <section className="modal-initial-values">
         <h3>Initial Attribute Values</h3>
         {attributes.length ? (
-          attributes.map((attribute) => (
-            <TypeDirectedValueEditor
-              key={attribute.id}
-              project={project}
-              type={attribute.type}
-              label={attribute.name}
-              value={values[attribute.id] ?? null}
-              errorPath={
-                !errorAttributeId || errorAttributeId === attribute.id ? errorFieldPath : null
-              }
-              onChange={(value) => {
-                setValues((current) => ({ ...current, [attribute.id]: value }));
-                setError(null);
-                setErrorFieldPath(null);
-                setErrorAttributeId(null);
-              }}
-            />
+          attributeGroups.map((group) => (
+            <section className="object-attribute-group" key={group.owner.id}>
+              <h4>{group.owner.id === classId ? `Attributes of ${group.owner.name}` : `Inherited from ${group.owner.name}`}</h4>
+              {group.attributes.map((attribute) => (
+                <TypeDirectedValueEditor
+                  key={attribute.id}
+                  project={project}
+                  type={attribute.type}
+                  label={attribute.name}
+                  value={values[attribute.id] ?? null}
+                  errorPath={
+                    !errorAttributeId || errorAttributeId === attribute.id ? errorFieldPath : null
+                  }
+                  onChange={(value) => {
+                    setValues((current) => ({ ...current, [attribute.id]: value }));
+                    setError(null);
+                    setErrorFieldPath(null);
+                    setErrorAttributeId(null);
+                  }}
+                />
+              ))}
+            </section>
           ))
         ) : (
           <p className="property-empty">No stored instance attributes.</p>
@@ -300,21 +306,24 @@ function ModalClassSelect({
   );
 }
 
-function effectiveStoredAttributes(
+function effectiveStoredAttributeGroups(
   project: ProjectDto,
   classId: string,
   visited = new Set<string>(),
-): ProjectDto['umlModel']['classes'][number]['attributes'] {
+): Array<{ owner: ProjectDto['umlModel']['classes'][number]; attributes: ProjectDto['umlModel']['classes'][number]['attributes'] }> {
   if (visited.has(classId)) return [];
   visited.add(classId);
   const umlClass = project.umlModel.classes.find((item) => item.id === classId);
   if (!umlClass) return [];
+  const ownStoredAttributes = umlClass.attributes.filter(
+    (attribute) => !attribute.staticAttribute && !attribute.derived,
+  );
   return [
     ...(umlClass.superClassIds ?? []).flatMap((id) =>
-      effectiveStoredAttributes(project, id, visited),
+      effectiveStoredAttributeGroups(project, id, visited),
     ),
-    ...umlClass.attributes,
-  ].filter((attribute) => !attribute.staticAttribute && !attribute.derived);
+    ...(ownStoredAttributes.length ? [{ owner: umlClass, attributes: ownStoredAttributes }] : []),
+  ];
 }
 
 function isObjectDiagramModal(modal: Exclude<ModalState, null>): modal is ObjectDiagramModalState {

@@ -41,7 +41,7 @@ export type ModalState =
   | { type: 'addInvariant'; contextClassId?: Id }
   | { type: 'addClassAssociation'; sourceClassId?: Id; targetClassId?: Id }
   | { type: 'addPackage' }
-  | { type: 'addImport' }
+  | { type: 'addSourceImport' }
   | { type: 'addEnumeration' }
   | { type: 'addDataType' }
   | {

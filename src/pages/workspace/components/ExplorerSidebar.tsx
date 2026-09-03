@@ -10,6 +10,7 @@ interface ExplorerSidebarProps {
   readModel: ProjectReadModelDto | null;
   isLoading: boolean;
   error: string | null;
+  onCollapse?: () => void;
 }
 
 export function ExplorerSidebar({
@@ -18,6 +19,7 @@ export function ExplorerSidebar({
   readModel,
   isLoading,
   error,
+  onCollapse,
 }: ExplorerSidebarProps) {
   const [query, setQuery] = useState('');
   const selection = useAppStore((state) => state.selection);
@@ -32,24 +34,32 @@ export function ExplorerSidebar({
       <div className="explorer-heading-row">
         <h2>Explorer</h2>
         <div className="explorer-heading-actions">
-          {activeView === 'class-diagram' ? (
-            <>
-              <button type="button" className="explorer-add-button" aria-label="Create package" disabled={!project} onClick={() => appStoreActions.openModal({ type: 'addPackage' })}>P+</button>
-              <button type="button" className="explorer-add-button" aria-label="Add import" disabled={!project} onClick={() => appStoreActions.openModal({ type: 'addImport' })}>I+</button>
-            </>
-          ) : (
+          {activeView !== 'class-diagram' ? (
             <button type="button" className="explorer-add-button" aria-label="Create object" disabled={!project} onClick={() => appStoreActions.openModal({ type: 'addObject' })}>+</button>
-          )}
+          ) : null}
+          {onCollapse ? (
+            <button
+              type="button"
+              className="workspace-sidebar-toggle"
+              aria-label="Collapse Explorer"
+              title="Collapse Explorer"
+              onClick={onCollapse}
+            >
+              <span aria-hidden="true">‹</span>
+            </button>
+          ) : null}
         </div>
       </div>
       <label className="explorer-search">
         <span className="sr-only">Search model elements</span>
+        <span className="explorer-search-icon" aria-hidden="true">⌕</span>
         <input
           type="search"
           value={query}
           placeholder="Search model"
           onChange={(event) => setQuery(event.target.value)}
         />
+        {query ? <button type="button" className="explorer-search-clear" aria-label="Clear search" onClick={() => setQuery('')}>×</button> : null}
       </label>
       <div className="explorer-tree" aria-live="polite">
         {isLoading ? <p className="explorer-status">Loading model...</p> : null}
@@ -58,7 +68,7 @@ export function ExplorerSidebar({
         ) : null}
         {!isLoading && !error && project ? (
           activeView === 'class-diagram' && readModel ? (
-            <><ProjectionTree nodes={readModel.explorer} query={normalizedQuery} selection={selection} /><ModelTypeBranches project={project} query={normalizedQuery} selection={selection} /></>
+            <ProjectionTree nodes={readModel.explorer} query={normalizedQuery} selection={selection} projectAvailable={Boolean(project)} />
           ) : (
             <ExplorerBranch
               label={activeView === 'object-diagram' ? 'Object model' : 'Project model'}
@@ -75,22 +85,16 @@ export function ExplorerSidebar({
   );
 }
 
-function ModelTypeBranches({ project, query, selection }: { project: ProjectDto; query: string; selection: SelectionState }) {
-  const groups = [
-    { label: 'Enumerations', type: 'enumeration' as const, items: project.umlModel.enumerations ?? [] },
-    { label: 'DataTypes', type: 'dataType' as const, items: project.umlModel.dataTypes ?? [] },
-  ];
-  return <section className="explorer-model-section explorer-model-types" aria-label="Model types">{groups.map((group) => { const items = group.items.filter((item) => `${item.name} ${item.qualifiedName ?? ''}`.toLocaleLowerCase().includes(query)); return <details open key={group.label} className="explorer-group"><summary>{group.label} <span>{items.length}</span></summary>{items.length ? <ul>{items.map((item) => <li key={item.id}><button type="button" className={selection?.type === group.type && selection.id === item.id ? 'explorer-item explorer-item-selected' : 'explorer-item'} onClick={() => appStoreActions.select({ view: 'class-diagram', type: group.type, id: item.id })}><span className={`explorer-kind-dot explorer-kind-${group.type.toLocaleLowerCase()}`} aria-hidden="true" /><span><strong>{item.name}</strong>{item.qualifiedName && item.qualifiedName !== item.name ? <small>{item.qualifiedName}</small> : null}</span></button></li>)}</ul> : <p className="explorer-empty">{query ? 'No matches' : 'Empty'}</p>}</details>; })}</section>;
-}
-
 function ProjectionTree({
   nodes,
   query,
   selection,
+  projectAvailable,
 }: {
   nodes: ExplorerElementDto[];
   query: string;
   selection: SelectionState;
+  projectAvailable: boolean;
 }) {
   const byParent = new Map<string | null, ExplorerElementDto[]>();
   for (const node of nodes) {
@@ -102,21 +106,45 @@ function ProjectionTree({
       return true;
     return (byParent.get(node.nodeId) ?? []).some(matches);
   };
-  return (
-    <section className="explorer-model-section">
-      <h3>Project model</h3>
-      <ul className="explorer-projection-tree">
-        {(byParent.get(null) ?? []).filter(matches).map((node) => (
+  const rootNodes = (byParent.get(null) ?? []).filter(matches);
+  const localNode = (node: ExplorerElementDto) => !node.imported && !node.readOnly;
+  const importedNode = (node: ExplorerElementDto) => node.imported || node.readOnly;
+  const projectNodes = rootNodes.filter(localNode);
+  const importNodes = nodes.filter((node) => node.kind === 'IMPORT_ROOT' && matches(node));
+  const renderNodes = (
+    branchNodes: ExplorerElementDto[],
+    includeNode: (node: ExplorerElementDto) => boolean,
+  ) => (
+    <ul className="explorer-projection-tree">
+      {branchNodes.filter(includeNode).map((node) => (
           <ProjectionNode
             key={node.nodeId}
             node={node}
             byParent={byParent}
-            matches={matches}
+            matches={(child) => matches(child) && includeNode(child)}
             selection={selection}
           />
-        ))}
-      </ul>
-    </section>
+      ))}
+    </ul>
+  );
+
+  return (
+    <>
+      <section className="explorer-model-section">
+        <div className="explorer-section-heading">
+          <h3>Project model</h3>
+          <button type="button" className="explorer-add-button" aria-label="Create package" disabled={!projectAvailable} onClick={() => appStoreActions.openModal({ type: 'addPackage' })}>+</button>
+        </div>
+        {renderNodes(projectNodes, localNode)}
+      </section>
+      <section className="explorer-model-section explorer-import-section">
+        <div className="explorer-section-heading">
+          <h3>Imports</h3>
+          <button type="button" className="explorer-add-button" aria-label="Add imported source files" disabled={!projectAvailable} onClick={() => appStoreActions.openModal({ type: 'addSourceImport' })}>+</button>
+        </div>
+        {importNodes.length ? renderNodes(importNodes, importedNode) : <p className="explorer-empty">Empty</p>}
+      </section>
+    </>
   );
 }
 
@@ -133,8 +161,16 @@ function ProjectionNode({
 }) {
   const children = (byParent.get(node.nodeId) ?? []).filter(matches);
   const kind = node.kind.toLocaleLowerCase();
-  const selectable = node.kind === 'CLASS' || node.kind === 'PACKAGE' || node.kind === 'IMPORT_ROOT';
-  const selectionType = node.kind === 'IMPORT_ROOT' ? 'import' : node.kind === 'PACKAGE' ? 'package' : 'class';
+  const selectable = node.kind === 'CLASS' || node.kind === 'PACKAGE' || (node.kind === 'IMPORT_ROOT' && Boolean(node.importId)) || ((node.kind === 'ENUMERATION' || node.kind === 'DATATYPE') && !node.imported && !node.readOnly);
+  const selectionType = node.kind === 'IMPORT_ROOT'
+    ? 'import'
+    : node.kind === 'PACKAGE'
+      ? 'package'
+      : node.kind === 'ENUMERATION'
+        ? 'enumeration'
+        : node.kind === 'DATATYPE'
+          ? 'dataType'
+          : 'class';
   const selectionId = node.kind === 'IMPORT_ROOT' ? (node.importId ?? node.elementId) : node.elementId;
   const content = (
     <>
@@ -142,7 +178,7 @@ function ProjectionNode({
       <span>
         <strong>{node.name}</strong>
         {node.qualifiedName && node.qualifiedName !== node.name ? <small>{node.qualifiedName}</small> : null}
-        {node.imported || node.readOnly ? <small>Imported · Read only</small> : null}
+        {node.imported || node.readOnly ? <small className="explorer-readonly-badge">Imported · Read only</small> : null}
       </span>
     </>
   );

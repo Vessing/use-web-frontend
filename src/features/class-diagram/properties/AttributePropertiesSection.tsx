@@ -40,11 +40,13 @@ export function AttributePropertiesSection({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const [fieldPath, setFieldPath] = useState<string | null>(null);
+  const [validationRequested, setValidationRequested] = useState(false);
   const [pendingSource, setPendingSource] = useState<ValueSource | null>(null);
 
   useEffect(() => {
     setDraft(initial);
     setFieldPath(null);
+    setValidationRequested(false);
     setPendingSource(null);
   }, [initial]);
 
@@ -59,6 +61,7 @@ export function AttributePropertiesSection({
         : valueSource === 'DERIVED' && !draft.deriveExpression?.trim()
           ? 'A derive expression is required.'
           : null;
+  const visibleLocalError = validationRequested ? localError : null;
   const hasInstances = project.objectModel.objects.some((object) => object.classId === umlClass.id);
 
   const applySource = (next: ValueSource) => {
@@ -73,6 +76,7 @@ export function AttributePropertiesSection({
   };
 
   const save = async () => {
+    setValidationRequested(true);
     if (localError || !revision || busy) return;
     setBusy(true);
     setMessage(null);
@@ -119,6 +123,8 @@ export function AttributePropertiesSection({
             value={mode.kind === 'existing' ? mode.id : '__new__'}
             onChange={(event) => {
               setMessage(null);
+              setFieldPath(null);
+              setValidationRequested(false);
               setMode(
                 event.target.value === '__new__'
                   ? { kind: 'create' }
@@ -132,13 +138,16 @@ export function AttributePropertiesSection({
                 {item.name} : {item.type}
               </option>
             ))}
-            <option value="__new__">New attribute</option>
+            <option value="__new__"></option>
           </select>
         </label>
         <button
           type="button"
           onClick={() => {
             setMessage(null);
+            setFieldPath(null);
+            setValidationRequested(false);
+            setDraft(normalizeAttribute(newAttribute()));
             setMode({ kind: 'create' });
           }}
         >
@@ -240,9 +249,9 @@ export function AttributePropertiesSection({
           onChange={(classifierValue) => setDraft((current) => ({ ...current, classifierValue }))}
         />
       ) : null}
-      {localError ? (
+      {visibleLocalError ? (
         <p className="properties-message properties-message-error" role="alert">
-          {localError}
+          {visibleLocalError}
         </p>
       ) : null}
       {message ? (
@@ -261,7 +270,7 @@ export function AttributePropertiesSection({
           type="button"
           className="primary-button"
           disabled={
-            Boolean(localError) || !revision || busy || (mode.kind === 'existing' && !dirty)
+            !revision || busy || (mode.kind === 'existing' && !dirty)
           }
           onClick={() => void save()}
         >

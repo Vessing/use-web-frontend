@@ -1,10 +1,23 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ProjectDto, ProjectReadModelDto } from '../../../api/dtos';
 import { appStoreActions, getAppState } from '../../../state';
 import { ClassPropertiesPanel } from './ClassPropertiesPanel';
+
+const { updateClassMock } = vi.hoisted(() => ({ updateClassMock: vi.fn() }));
+
+vi.mock('../../../api', async () => {
+  const actual = await vi.importActual<typeof import('../../../api')>('../../../api');
+  return {
+    ...actual,
+    modelCommandApi: {
+      ...actual.modelCommandApi,
+      updateClass: updateClassMock,
+    },
+  };
+});
 
 afterEach(() => {
   appStoreActions.reset();
@@ -27,7 +40,17 @@ describe('ClassPropertiesPanel', () => {
       'aria-selected',
       'true',
     );
+    expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Attributes' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Operations' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Generalizations' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Definitions' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Class ID')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Attributes' }));
     expect(screen.getByRole('button', { name: 'Add Attribute' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Operations' }));
     expect(screen.getByRole('button', { name: 'Add Operation' })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: 'Association' }));
@@ -65,7 +88,7 @@ describe('ClassPropertiesPanel', () => {
     expect(onProjectChange).not.toHaveBeenCalled();
   });
 
-  it('shows backend-projected supertypes and inherited features as read-only', () => {
+  it('shows backend-projected supertypes and inherited features as read-only', async () => {
     const project = createProject();
     project.umlModel.classes[0].superClassIds = ['class-book'];
 
@@ -79,10 +102,45 @@ describe('ClassPropertiesPanel', () => {
       />,
     );
 
-    expect(screen.getByText('Current direct supertypes')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Book' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Generalizations' }));
+
+    expect(screen.getByLabelText('Generalization')).toHaveValue('class-book');
+    expect(screen.getByRole('button', { name: 'Add Generalization' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Inheritance chain')).toHaveValue('User → Book');
+    expect(screen.getByRole('heading', { name: 'Inherited Attributes' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Inherited Operations' })).toBeInTheDocument();
     expect(screen.getByText('title : String')).toBeInTheDocument();
     expect(screen.getByText('Inherited from Book · read-only')).toBeInTheDocument();
+    expect(screen.getByText('No inherited operations for the selected generalization.')).toBeInTheDocument();
+  });
+
+  it('moves a class through the revision-protected command and refreshes the explorer projection', async () => {
+    const project = createProject();
+    project.umlModel.packages = [{ id: 'package-people', qualifiedName: 'university::people' }];
+    const onRefreshProject = vi.fn().mockResolvedValue(true);
+    updateClassMock.mockResolvedValue({ revision: 'revision-19' });
+
+    render(
+      <ClassPropertiesPanel
+        project={project}
+        umlClass={project.umlModel.classes[0]}
+        readModel={createReadModel()}
+        onProjectChange={vi.fn()}
+        onRefreshProject={onRefreshProject}
+      />,
+    );
+
+    await userEvent.selectOptions(screen.getByLabelText('Package / Namespace'), 'package-people');
+
+    await waitFor(() => expect(updateClassMock).toHaveBeenCalledWith(
+      'project-library',
+      'class-user',
+      expect.objectContaining({
+        expectedRevision: 'revision-18',
+        draft: expect.objectContaining({ packageId: 'package-people' }),
+      }),
+    ));
+    expect(onRefreshProject).toHaveBeenCalledOnce();
   });
 });
 

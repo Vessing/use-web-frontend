@@ -39,6 +39,7 @@ export function OperationPropertiesSection({ project, umlClass, revision, onRefr
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const [fieldPath, setFieldPath] = useState<string | null>(null);
+  const [validationRequested, setValidationRequested] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [tab, setTab] = useState<OperationTab>('signature');
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
@@ -47,13 +48,16 @@ export function OperationPropertiesSection({ project, umlClass, revision, onRefr
   useEffect(() => {
     setDraft(initial);
     setFieldPath(null);
+    setValidationRequested(false);
     setSelectedContractId(null);
     setContractDeleteOpen(false);
   }, [initial]);
 
   const localError = validateDraft(draft);
+  const visibleLocalError = validationRequested ? localError : null;
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
   const save = async () => {
+    setValidationRequested(true);
     if (localError || !revision || busy) return;
     setBusy(true);
     setMessage(null);
@@ -142,13 +146,13 @@ export function OperationPropertiesSection({ project, umlClass, revision, onRefr
           <select
             aria-label="Operation"
             value={mode.kind === 'existing' ? mode.id : '__new__'}
-            onChange={(event) => { setMessage(null); setMode(event.target.value === '__new__' ? { kind: 'create' } : { kind: 'existing', id: event.target.value }); }}
+            onChange={(event) => { setMessage(null); setValidationRequested(false); setMode(event.target.value === '__new__' ? { kind: 'create' } : { kind: 'existing', id: event.target.value }); }}
           >
             {umlClass.operations.map((operation) => <option key={operation.id} value={operation.id}>{signature(operation)}</option>)}
-            <option value="__new__">New operation</option>
+            <option value="__new__"></option>
           </select>
         </label>
-        <button type="button" onClick={() => { setMessage(null); setMode({ kind: 'create' }); }}>Add Operation</button>
+        <button type="button" onClick={() => { setMessage(null); setFieldPath(null); setValidationRequested(false); setDraft(normalizeOperation(newOperation())); setMode({ kind: 'create' }); }}>Add Operation</button>
       </div>
 
       <div className="operation-contract-tabs" role="tablist" aria-label="Operation details">
@@ -160,7 +164,7 @@ export function OperationPropertiesSection({ project, umlClass, revision, onRefr
 
       {tab === 'signature' ? <>
       <div className="operation-signature-grid">
-        <Field label="Name" value={draft.name} error={fieldError(fieldPath, 'name') ?? (!draft.name.trim() ? 'Required' : null)} onChange={(name) => setDraft((current) => ({ ...current, name }))} />
+        <Field label="Name" value={draft.name} error={fieldError(fieldPath, 'name') ?? (validationRequested && !draft.name.trim() ? 'Required' : null)} onChange={(name) => setDraft((current) => ({ ...current, name }))} />
         <TypePicker project={project} label="Return type" value={draft.returnType} allowVoid onChange={(returnType) => setDraft((current) => ({ ...current, returnType }))} />
         <label className="property-field"><span>Visibility</span><select value={draft.visibility ?? 'PUBLIC'} onChange={(event) => setDraft((current) => ({ ...current, visibility: event.target.value as UmlVisibilityDto }))}>{(['PUBLIC', 'PRIVATE', 'PROTECTED', 'PACKAGE'] as UmlVisibilityDto[]).map((value) => <option key={value} value={value}>{value.toLowerCase()}</option>)}</select></label>
       </div>
@@ -176,7 +180,7 @@ export function OperationPropertiesSection({ project, umlClass, revision, onRefr
         {draft.parameters.length === 0 ? <p className="property-empty">No parameters defined.</p> : null}
         {[...draft.parameters].sort(byPosition).map((parameter, index, ordered) => (
           <div key={parameter.id} className="operation-parameter-row">
-            <Field label={`Parameter ${index + 1} name`} value={parameter.name} error={fieldError(fieldPath, `parameters.${parameter.id}`) ?? (!parameter.name.trim() ? 'Required' : null)} onChange={(name) => updateParameter(parameter.id, { name })} />
+            <Field label={`Parameter ${index + 1} name`} value={parameter.name} error={fieldError(fieldPath, `parameters.${parameter.id}`) ?? (validationRequested && !parameter.name.trim() ? 'Required' : null)} onChange={(name) => updateParameter(parameter.id, { name })} />
             <TypePicker project={project} label="Type" value={parameter.type} onChange={(type) => updateParameter(parameter.id, { type })} />
             <label className="property-field"><span>Direction</span><select value={direction(parameter.direction)} onChange={(event) => updateParameter(parameter.id, { direction: event.target.value as Direction })}><option value="IN">in</option><option value="OUT">out</option><option value="INOUT">inout</option></select></label>
             <div className="operation-parameter-actions" aria-label={`Order ${parameter.name || `parameter ${index + 1}`}`}>
@@ -203,11 +207,11 @@ export function OperationPropertiesSection({ project, umlClass, revision, onRefr
         onDelete={deleteContract}
       />}
 
-      {localError ? <p className="properties-message properties-message-error" role="alert">{localError}</p> : null}
+      {visibleLocalError ? <p className="properties-message properties-message-error" role="alert">{visibleLocalError}</p> : null}
       {message ? <p className={`properties-message properties-message-${message.kind}`} role={message.kind === 'error' ? 'alert' : 'status'}>{message.text}</p> : null}
       <div className="properties-actions">
-        <button type="button" disabled={!dirty || busy} onClick={() => setDraft(initial)}>Reset</button>
-        <button type="button" className="primary-button" disabled={Boolean(localError) || !revision || busy || (mode.kind === 'existing' && !dirty)} onClick={() => void save()}>{busy ? 'Saving...' : mode.kind === 'create' ? 'Create Operation' : tab === 'signature' ? 'Save Operation' : tab === 'body' ? 'Save Body' : 'Save Contract'}</button>
+        <button type="button" disabled={!dirty || busy} onClick={() => { setDraft(initial); setMessage(null); setFieldPath(null); setValidationRequested(false); }}>Reset</button>
+        <button type="button" className="primary-button" disabled={!revision || busy || (mode.kind === 'existing' && !dirty)} onClick={() => void save()}>{busy ? 'Saving...' : mode.kind === 'create' ? 'Create Operation' : tab === 'signature' ? 'Save Operation' : tab === 'body' ? 'Save Body' : 'Save Contract'}</button>
         {mode.kind === 'existing' ? <button type="button" className="danger-button" disabled={busy} onClick={() => setDeleteOpen(true)}>Delete Operation</button> : null}
       </div>
       {!revision ? <p className="properties-message properties-message-error">A model revision is required before operation commands can run.</p> : null}
@@ -220,7 +224,7 @@ function BodyEditor({ operation, ownerName, fieldPath, onChange }: { operation: 
   const enabled = Boolean(operation.query) && !operation.abstractOperation;
   return <section className="operation-body-editor" aria-label="Operation body editor">
     <header className="property-section-header"><div><h4>OCL Query Body</h4><span>{ownerName}::{operation.name || 'new operation'}</span></div><span className={`property-status-badge ${enabled ? '' : 'property-status-disabled'}`}>{enabled ? 'QUERY' : 'READ ONLY'}</span></header>
-    {!enabled ? <div className="properties-message properties-message-warning"><strong>Body unavailable</strong><br />A stored OCL body requires a non-abstract query operation. Imperative operation bodies are outside F9.</div> : null}
+    {!enabled ? <div className="properties-message properties-message-warning"><strong>OCL body not available</strong><br />Open the Signature tab, enable Query, and turn off Abstract. OCL bodies are available only for side-effect-free query operations; executable bodies that modify objects or links are not supported.</div> : null}
     <label className="property-field ocl-expression-field"><span>OCL body expression</span><textarea aria-label="OCL body expression" rows={10} disabled={!enabled} value={operation.bodyExpression ?? ''} aria-invalid={Boolean(fieldError(fieldPath, 'bodyExpression')) || undefined} onChange={(event) => onChange(event.target.value || null)} />{fieldError(fieldPath, 'bodyExpression') ? <small className="property-field-error">The backend rejected this operation body.</small> : null}</label>
     <div className="operation-contract-context"><strong>Available context</strong><code>self : {ownerName}</code>{operation.parameters.map((parameter) => <code key={parameter.id}>{parameter.name || parameter.id} : {parameter.type}</code>)}<span>Expected result: {operation.returnType}. Typechecking and evaluation are performed by the backend.</span></div>
     {enabled && !operation.bodyExpression ? <div className="operation-contract-empty"><strong>No OCL body defined</strong><span>This query requires a body or a registered backend implementation before invocation.</span></div> : null}

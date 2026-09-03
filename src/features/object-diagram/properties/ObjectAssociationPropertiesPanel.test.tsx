@@ -131,7 +131,7 @@ describe('ObjectAssociationPropertiesPanel', () => {
 });
 
 function deleteImpact(project: ProjectDto): ObjectLinkDeleteImpactDto {
-  return { revisionScope: 'SNAPSHOT', revision: '18', target: { referenceId: 'target-link', elementType: 'OBJECT_LINK', elementId: 'link-enrollment', elementName: 'Enrollment link', relation: 'TARGET', cascadeAllowed: false }, currentLink: project.objectModel.links[0], context: project.umlModel.associations[0].ends.map((end) => ({ referenceId: `context-${end.id}`, elementType: 'ASSOCIATION_END', elementId: end.id, elementName: end.roleName, relation: 'END', cascadeAllowed: false })), blockers: [], allowedCascades: [{ referenceId: 'cascade-link-object', elementType: 'OBJECT', elementId: 'enrollment-object', elementName: 'Enrollment identity', relation: 'ASSOCIATION_CLASS_IDENTITY', cascadeAllowed: true }], validationTargets: [], blocked: false };
+  return { revisionScope: 'SNAPSHOT', revision: '18', target: { referenceId: 'target-link', elementType: 'OBJECT_LINK', elementId: 'link-enrollment', elementName: 'Enrollment link', relation: 'TARGET', cascadeAllowed: false }, currentLink: project.objectModel.links[0], context: project.umlModel.associations[0].ends.map((end) => ({ referenceId: `context-${end.id}`, elementType: 'ASSOCIATION_END', elementId: end.id, elementName: end.roleName ?? end.id, relation: 'END', cascadeAllowed: false })), blockers: [], allowedCascades: [{ referenceId: 'cascade-link-object', elementType: 'OBJECT', elementId: 'enrollment-object', elementName: 'Enrollment identity', relation: 'ASSOCIATION_CLASS_IDENTITY', cascadeAllowed: true }], validationTargets: [], blocked: false };
 }
 
 function fixture(): ProjectDto {

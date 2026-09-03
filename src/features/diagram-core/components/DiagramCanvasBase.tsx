@@ -6,14 +6,13 @@ import {
   type EdgeTypes,
   type NodeChange,
   type NodeTypes,
-  type OnSelectionChangeParams,
 } from '@xyflow/react';
 import { useEffect, useState } from 'react';
 
 import type { WorkspaceView } from '../../../app/navigation';
-import type { SelectionState } from '../../../state';
-import { appStoreActions, getAppState } from '../../../state';
-import type { DiagramEdge, DiagramElementKind, DiagramNode } from '../types';
+import { appStoreActions } from '../../../state';
+import type { DiagramEdge, DiagramNode } from '../types';
+import { selectionFor } from './canvasSelection';
 import { ObjectLinkEdge } from './ObjectLinkEdge';
 import { ObjectNode } from './ObjectNode';
 import { NaryHubNode } from './NaryHubNode';
@@ -66,6 +65,7 @@ export function DiagramCanvasBase({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
+        defaultEdgeOptions={{ zIndex: 10 }}
         onNodesChange={(changes) => {
           setCanvasNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
           persistNodePositionChanges(activeView, changes);
@@ -76,7 +76,6 @@ export function DiagramCanvasBase({
         onEdgeClick={(_, edge) => {
           if (edge.data?.ref) appStoreActions.select(selectionFor(activeView, edge.data.ref));
         }}
-        onSelectionChange={(selection) => updateSelection(activeView, selection)}
         onPaneClick={() => appStoreActions.clearSelection()}
       >
         <Background />
@@ -100,61 +99,4 @@ function persistNodePositionChanges(
       y: change.position.y,
     });
   }
-}
-
-function updateSelection(
-  activeView: Extract<WorkspaceView, 'class-diagram' | 'object-diagram'>,
-  selection: OnSelectionChangeParams,
-) {
-  const selectedNode = selection.nodes[0] as DiagramNode | undefined;
-  const selectedEdge = selection.edges[0] as DiagramEdge | undefined;
-  const currentSelection = getAppState().selection;
-
-  if (
-    activeView === 'class-diagram' &&
-    currentSelection?.view === 'class-diagram' &&
-    (currentSelection.type === 'invariant' || currentSelection.type === 'package' || currentSelection.type === 'import' || currentSelection.type === 'enumeration' || currentSelection.type === 'dataType')
-  ) {
-    return;
-  }
-
-  if (selectedNode?.data.ref) {
-    appStoreActions.select(selectionFor(activeView, selectedNode.data.ref));
-    return;
-  }
-
-  if (selectedEdge?.data?.ref) {
-    appStoreActions.select(selectionFor(activeView, selectedEdge.data.ref));
-    return;
-  }
-
-}
-
-function selectionFor(
-  activeView: Extract<WorkspaceView, 'class-diagram' | 'object-diagram'>,
-  ref: { elementType: DiagramElementKind; elementId: string },
-): SelectionState {
-  if (
-    activeView === 'class-diagram' &&
-    (ref.elementType === 'class' || ref.elementType === 'association' || ref.elementType === 'enumeration' || ref.elementType === 'dataType')
-  ) {
-    return {
-      view: 'class-diagram',
-      type: ref.elementType,
-      id: ref.elementId,
-    };
-  }
-
-  if (
-    activeView === 'object-diagram' &&
-    (ref.elementType === 'object' || ref.elementType === 'objectLink')
-  ) {
-    return {
-      view: 'object-diagram',
-      type: ref.elementType,
-      id: ref.elementId,
-    };
-  }
-
-  return null;
 }

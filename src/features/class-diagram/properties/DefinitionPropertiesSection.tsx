@@ -73,7 +73,7 @@ export function DefinitionPropertiesSection({ project, ownerKind, ownerId, owner
       <button type="button" onClick={() => { setMessage(null); setMode({ kind: 'create' }); }}>Add Definition</button>
     </div>
     {definitions.length === 0 && mode.kind === 'create' ? <div className="definition-empty"><strong>No definitions in this {ownerKind.toLowerCase()}</strong><span>Create a reusable OCL property or operation definition.</span></div> : null}
-    <fieldset className="value-source-control"><legend>Definition kind</legend><button type="button" aria-pressed={draft.kind === 'PROPERTY_DEF'} onClick={() => updateKind('PROPERTY_DEF')}>Property</button><button type="button" aria-pressed={draft.kind === 'OPERATION_DEF'} onClick={() => updateKind('OPERATION_DEF')}>Operation</button></fieldset>
+    <label className="property-field"><span>Definition kind</span><select aria-label="Definition kind" value={draft.kind} onChange={(event) => updateKind(event.target.value as OclDefinitionKindDto)}><option value="PROPERTY_DEF">Property</option><option value="OPERATION_DEF">Operation</option></select></label>
     <div className="operation-signature-grid">
       <Field label="Definition name" value={draft.name} error={fieldError(fieldPath, 'name')} onChange={(name) => setDraft((current) => ({ ...current, name }))} />
       <Field label="Result type" value={draft.resultType} error={fieldError(fieldPath, 'resultType')} onChange={(resultType) => setDraft((current) => ({ ...current, resultType }))} />

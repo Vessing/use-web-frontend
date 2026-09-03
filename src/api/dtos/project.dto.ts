@@ -68,6 +68,21 @@ export interface ModelTextDto {
   sourceOrigin?: string | null;
   lineEnding?: string;
   updatedAt?: string;
+  sources?: ModelTextSourceProvenanceDto[];
+  sourceFiles?: ModelTextSourceFileDto[];
+}
+
+export interface ModelTextSourceProvenanceDto {
+  sourcePath: string;
+  importedBy?: string | null;
+  selectedNames: string[];
+  depth: number;
+  sha256: string;
+}
+
+export interface ModelTextSourceFileDto {
+  sourcePath: string;
+  text: string;
 }
 
 export interface ApplyModelTextRequestDto {
@@ -77,8 +92,10 @@ export interface ApplyModelTextRequestDto {
   includeDiagnostics: boolean;
   sourceName: string;
   sourceFormat: 'use';
-  sourceOrigin: 'open-existing' | 'ocl-editor';
+  sourceOrigin: 'open-existing' | 'ocl-editor' | 'explorer-import';
   baseVersion?: string | null;
+  sourceFiles?: Record<string, string>;
+  replaceSourceFiles?: boolean;
 }
 
 export interface ApplyModelTextResponseDto {

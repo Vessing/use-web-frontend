@@ -42,6 +42,7 @@ describe('CheckConstraintsButton', () => {
     render(
       <CheckConstraintsButton
         projectId="project-library"
+        projectName="Library Model"
         validateProject={validateProject}
       />,
     );
@@ -64,6 +65,9 @@ describe('CheckConstraintsButton', () => {
       ]),
     );
     expect(getAppState().activeBottomPanelTab).toBe('validation-results');
+    expect(getAppState().consoleLogs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: 'Check Constraints started for project "Library Model".' }),
+    ]));
     expect(getAppState().consoleLogs.at(-1)?.message).toContain(
       'Validation completed: INVALID',
     );
@@ -83,6 +87,7 @@ describe('CheckConstraintsButton', () => {
     render(
       <CheckConstraintsButton
         projectId="missing-project"
+        projectName="Missing Project"
         validateProject={validateProject}
       />,
     );

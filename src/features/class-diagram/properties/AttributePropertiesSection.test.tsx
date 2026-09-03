@@ -8,6 +8,36 @@ import { AttributePropertiesSection } from './AttributePropertiesSection';
 afterEach(() => vi.restoreAllMocks());
 
 describe('AttributePropertiesSection', () => {
+  it('shows an empty untouched create draft and validates only after submit', async () => {
+    const user = userEvent.setup();
+    const create = vi.spyOn(modelCommandApi, 'createAttribute');
+    const projectWithoutAttributes: ProjectDto = {
+      ...project,
+      umlModel: {
+        ...project.umlModel,
+        classes: [{ ...project.umlModel.classes[0], attributes: [] }],
+      },
+    };
+
+    render(
+      <AttributePropertiesSection
+        project={projectWithoutAttributes}
+        umlClass={projectWithoutAttributes.umlModel.classes[0]}
+        revision="18"
+        onRefreshProject={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Attribute')).toHaveDisplayValue('');
+    expect(screen.getByLabelText('Attribute name')).toHaveValue('');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Create Attribute' }));
+
+    expect(create).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Attribute name is required.');
+  });
+
   it('persists a derived attribute through the revision-protected command and reloads it', async () => {
     const user = userEvent.setup();
     const refresh = vi.fn().mockResolvedValue(true);

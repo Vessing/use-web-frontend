@@ -55,4 +55,5 @@ describe('diagram-core', () => {
       },
     });
   });
+
 });

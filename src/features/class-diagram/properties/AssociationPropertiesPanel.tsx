@@ -60,7 +60,7 @@ export function AssociationPropertiesPanel(props: Props) {
         association.id,
         {
           expectedRevision: readVersion,
-          draft,
+          draft: normalizeDraft(draft),
         },
       );
       if (!await onRefreshProject()) {
@@ -130,7 +130,7 @@ export function AssociationPropertiesPanel(props: Props) {
               return next;
             })}
             onRemove={draft.ends.length > 2 ? () => {
-              if (window.confirm(`Remove end "${end.roleName}"? Existing links and OCL navigation may block this change.`)) {
+              if (window.confirm(`Remove end "${end.roleName ?? `End ${index + 1}`}"? Existing links and OCL navigation may block this change.`)) {
                 setDraft((current) => ({ ...current, ends: current.ends.filter((item) => item.id !== end.id) }));
               }
             } : undefined}
@@ -197,7 +197,7 @@ function EndEditor({ end, index, project, diagnostic, onChange, onMultiplicityVa
       </button>
       <div className="association-end-grid">
         <label className="property-field"><span>Classifier</span><select value={end.classId} onChange={(event) => onChange({ classId: event.target.value })}>{project.umlModel.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <TextField label="Role Name" value={end.roleName} invalid={!end.roleName.trim()} onChange={(roleName) => onChange({ roleName })} />
+        <TextField label="Role Name (optional)" value={end.roleName ?? ''} invalid={false} onChange={(roleName) => onChange({ roleName })} />
         <MultiplicityField value={multiplicity} serverError={diagnostic?.fieldErrors[`ends.${end.id}.multiplicity`]} onValidityChange={onMultiplicityValidityChange} onChange={(value) => onChange({ multiplicity: value })} />
         <label className="property-field"><span>Aggregation</span><select value={end.aggregationKind ?? 'NONE'} onChange={(event) => onChange({ aggregationKind: event.target.value as NonNullable<UmlAssociationEndDto['aggregationKind']> })}><option value="NONE">None</option><option value="SHARED">Shared aggregation</option><option value="COMPOSITE">Composition</option></select></label>
       </div>
@@ -273,7 +273,8 @@ function DeleteDialog({ project, association, fallbackRevision, onCancel, onDele
   return <div className="modal-backdrop" role="presentation"><div className="modal-dialog association-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-association-title"><header className="modal-header"><h2 id="delete-association-title">Delete Association</h2><button type="button" className="icon-button" onClick={onCancel}>Close</button></header><div className="modal-body"><p>Are you sure you want to delete <strong>{association.name}</strong>?</p>{busy && !impact ? <p className="modal-empty">Checking references...</p> : null}{impact?.references.length === 0 ? <p className="properties-message properties-message-success">No dependent references were found.</p> : null}{impact?.references.map((reference) => <label key={reference.referenceId} className={`delete-impact-row ${reference.cascadeAllowed ? '' : 'delete-impact-blocker'}`}><input type="checkbox" disabled={!reference.cascadeAllowed} checked={selected.includes(reference.referenceId)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, reference.referenceId] : current.filter((id) => id !== reference.referenceId))} /><span><strong>{reference.elementName}</strong><small>{reference.relation}{reference.cascadeAllowed ? ' / may be deleted with this association' : ' / blocks deletion'}</small></span></label>)}{error ? <p className="modal-form-error" role="alert">{error}</p> : null}</div><footer className="modal-footer"><button type="button" onClick={onCancel}>Cancel</button><button type="button" className="danger-button" disabled={!canDelete} onClick={() => void remove()}>{busy ? 'Deleting...' : 'Delete Association'}</button></footer></div></div>;
 }
 
-function validate(draft: UmlAssociationDto) { const errors: string[] = []; if (!draft.name.trim()) errors.push('Association name is required.'); if (draft.ends.length < 2) errors.push('An association requires at least two ends.'); draft.ends.forEach((end, index) => { if (!end.roleName.trim()) errors.push(`End ${index + 1} requires a role name.`); const names=(end.qualifiers ?? []).map((item) => item.name.trim()); if (names.some((name) => !name)) errors.push(`End ${index + 1} contains an unnamed qualifier.`); if (new Set(names).size !== names.length) errors.push(`End ${index + 1} contains duplicate qualifier names.`); }); return errors; }
+function validate(draft: UmlAssociationDto) { const errors: string[] = []; if (!draft.name.trim()) errors.push('Association name is required.'); if (draft.ends.length < 2) errors.push('An association requires at least two ends.'); draft.ends.forEach((end, index) => { if (!end.classId) errors.push(`End ${index + 1} requires a classifier.`); const names=(end.qualifiers ?? []).map((item) => item.name.trim()); if (names.some((name) => !name)) errors.push(`End ${index + 1} contains an unnamed qualifier.`); if (new Set(names).size !== names.length) errors.push(`End ${index + 1} contains duplicate qualifier names.`); }); return errors; }
+function normalizeDraft(draft: UmlAssociationDto): UmlAssociationDto { return { ...draft, ends: draft.ends.map((end) => ({ ...end, roleName: end.roleName?.trim() || null })) }; }
 function classifierName(project: ProjectDto, id: string) { return project.umlModel.classes.find((item) => item.id === id)?.name ?? id; }
 function relationshipKind(association: UmlAssociationDto) {
   if (association.associationClassId) return 'Association Class';

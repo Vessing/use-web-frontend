@@ -21,7 +21,6 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Recent Projects' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Learn & Support' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Documentation/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Examples/ })).toBeInTheDocument();
   });
 
   it('navigates from dashboard view all to the all-projects route', async () => {
@@ -32,6 +31,18 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('link', { name: /View all/ }));
 
     expect(window.location.pathname).toBe('/projects');
+  });
+
+  it('opens the USE documentation from Learn & Support', async () => {
+    window.history.pushState(null, '', '/');
+
+    renderWithProviders(<App />);
+
+    await userEvent.click(screen.getByRole('link', { name: /Documentation/ }));
+
+    expect(window.location.pathname).toBe('/docs');
+    expect(screen.getByRole('heading', { name: 'USE Documentation' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '1. Build or import a model' })).toBeInTheDocument();
   });
 
   it('loads recent projects from the backend and opens a selected project', async () => {
@@ -223,7 +234,8 @@ describe('App', () => {
       diagnostics: [],
       changedElementIds: ['class-user'],
     }));
-    const useFile = fileWithText('Library.use', 'model Library\nclass User\nend\n');
+    const useFile = fileWithText('Library.use', 'import Date from "Dates.use"\nmodel Library\nclass User\nend\n');
+    const datesFile = fileWithText('Dates.use', 'model Dates\ndataType Date\nend\n');
 
     renderWithProviders(
       <DashboardPage
@@ -235,6 +247,11 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Open Existing' }));
     await userEvent.upload(screen.getByLabelText('Choose .use file'), useFile);
+    await userEvent.upload(screen.getByLabelText('Choose imported .use files'), datesFile);
+    expect(screen.getByRole('list', { name: 'Included imported source files' })).toHaveTextContent('Dates.use');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove imported file Dates.use' }));
+    expect(screen.queryByRole('list', { name: 'Included imported source files' })).not.toBeInTheDocument();
+    await userEvent.upload(screen.getByLabelText('Choose imported .use files'), datesFile);
     await userEvent.click(screen.getByRole('button', { name: 'Open Project' }));
 
     expect(createProject).toHaveBeenCalledWith({
@@ -245,10 +262,11 @@ describe('App', () => {
     expect(applyModelText).toHaveBeenCalledWith(
       'imported-project-id',
       expect.objectContaining({
-        modelText: 'model Library\nclass User\nend\n',
+        modelText: 'import Date from "Dates.use"\nmodel Library\nclass User\nend\n',
         sourceName: 'Library.use',
         sourceFormat: 'use',
         sourceOrigin: 'open-existing',
+        sourceFiles: { 'Dates.use': 'model Dates\ndataType Date\nend\n' },
       }),
     );
     expect(window.location.pathname).toBe('/projects/imported-project-id/class-diagram');

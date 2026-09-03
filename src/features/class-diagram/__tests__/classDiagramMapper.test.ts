@@ -126,6 +126,23 @@ describe('mapProjectToClassDiagram', () => {
     expect(diagram.nodes[1].position).toEqual({ x: 460, y: 90 });
   });
 
+  it('uses saved layout positions for enumerations and DataTypes', () => {
+    const project = createLibraryProject();
+    project.umlModel.enumerations = [{ id: 'enum-state', name: 'State', literals: [] }];
+    project.umlModel.dataTypes = [{ id: 'datatype-code', name: 'Code', properties: [] }];
+
+    const diagram = mapProjectToClassDiagram(project, {}, null, {
+      nodes: [
+        { elementId: 'enum-state', x: 700, y: 180 },
+        { elementId: 'datatype-code', x: 920, y: 260 },
+      ],
+      edges: [],
+    });
+
+    expect(diagram.nodes.find((node) => node.id === 'enum-state')?.position).toEqual({ x: 700, y: 180 });
+    expect(diagram.nodes.find((node) => node.id === 'datatype-code')?.position).toEqual({ x: 920, y: 260 });
+  });
+
   it('maps validation markers to classes, invariants and associations', () => {
     const diagram = mapProjectToClassDiagram(createLibraryProject(), {
       'class-user': [

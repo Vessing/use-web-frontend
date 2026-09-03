@@ -3,24 +3,23 @@ import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiClientError, modelCommandApi } from '../../../api';
 import type { ProjectDto, UmlTypeDto } from '../../../api/dtos';
 import { appStoreActions, type ModalState } from '../../../state';
-import { syncProjectChange } from '../../project-sync/syncProjectChange';
 import { parseMultiplicity } from '../properties/multiplicity';
 import { addClass } from '../properties/projectUpdates';
 import { NaryAssociationModal } from './NaryAssociationModal';
 import { ModelTypeModal } from './ModelTypeModal';
 import { ModelTypeDeleteDialog } from './ModelTypeDeleteDialog';
+import { AddSourceImportModal } from './AddSourceImportModal';
 
 interface ClassDiagramModalsProps {
   modal: Exclude<ModalState, null>;
   project: ProjectDto;
   expectedRevision: string;
-  onProjectChange: (project: ProjectDto) => void;
   onRefreshProject: () => Promise<boolean>;
 }
 
 type ClassDiagramModalState = Extract<
   Exclude<ModalState, null>,
-  { type: 'addClass' | 'addClassAssociation' | 'addInvariant' | 'addPackage' | 'addImport' | 'addEnumeration' | 'addDataType' }
+  { type: 'addClass' | 'addClassAssociation' | 'addInvariant' | 'addPackage' | 'addSourceImport' | 'addEnumeration' | 'addDataType' }
 >;
 
 const primitiveTypes: UmlTypeDto[] = ['String', 'Integer', 'Real', 'Boolean'];
@@ -29,7 +28,6 @@ export function ClassDiagramModals({
   modal,
   project,
   expectedRevision,
-  onProjectChange,
   onRefreshProject,
 }: ClassDiagramModalsProps) {
   if (modal.type === 'deleteModelTypeElement') {
@@ -52,7 +50,8 @@ export function ClassDiagramModals({
       <AddClassModal
         modal={modal}
         project={project}
-        onProjectChange={onProjectChange}
+        expectedRevision={expectedRevision}
+        onRefreshProject={onRefreshProject}
       />
     );
   }
@@ -78,14 +77,8 @@ export function ClassDiagramModals({
     );
   }
 
-  if (modal.type === 'addImport') {
-    return (
-      <AddImportModal
-        project={project}
-        expectedRevision={expectedRevision}
-        onRefreshProject={onRefreshProject}
-      />
-    );
+  if (modal.type === 'addSourceImport') {
+    return <AddSourceImportModal project={project} onRefreshProject={onRefreshProject} />;
   }
 
   if (modal.type === 'addEnumeration' || modal.type === 'addDataType') {
@@ -136,43 +129,6 @@ function AddPackageModal({ project, expectedRevision, onRefreshProject }: { proj
   );
 }
 
-function AddImportModal({ project, expectedRevision, onRefreshProject }: { project: ProjectDto; expectedRevision: string; onRefreshProject: () => Promise<boolean> }) {
-  const packages = project.umlModel.packages ?? [];
-  const [importingPackageId, setImportingPackageId] = useState(packages[0]?.id ?? '');
-  const [importedPackageId, setImportedPackageId] = useState(packages[1]?.id ?? packages[0]?.id ?? '');
-  const [alias, setAlias] = useState('');
-  const [source, setSource] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
-  const canSubmit = packages.length >= 2 && Boolean(importingPackageId) && Boolean(importedPackageId) && Boolean(expectedRevision) && !busy;
-  return (
-    <ModalShell title="Add Package Import" submitLabel={busy ? 'Adding...' : 'Add Import'} canSubmit={canSubmit} onSubmit={(event) => {
-      event.preventDefault();
-      if (!canSubmit) return;
-      setError(null); setFieldErrors({}); setBusy(true);
-      const draft = { id: `import-${crypto.randomUUID()}`, importingPackageId, importedPackageId, alias: alias.trim() || null, source: source.trim() || null, provenance: 'WORKSPACE' };
-      void modelCommandApi.createImport(project.project.id, { expectedRevision, draft }).then(async (result) => {
-        if (!await onRefreshProject()) throw new Error('The authoritative project projection could not be reloaded.');
-        appStoreActions.select({ view: 'class-diagram', type: 'import', id: result.result.id });
-        appStoreActions.addConsoleLog({ level: 'info', source: 'api', message: `Import ${result.result.alias || result.result.id} added at model revision ${result.revision}.` });
-        appStoreActions.closeModal();
-      }).catch((caught) => {
-        setError(commandMessage(caught)); setFieldErrors(commandFieldErrors(caught)); setBusy(false);
-      });
-    }}>
-      {packages.length < 2 ? <p className="modal-form-error">At least two packages are required.</p> : null}
-      <ModalPackageSelect label="Target package" packages={packages} value={importingPackageId} onChange={setImportingPackageId} error={fieldErrors.importingPackageId} />
-      <ModalPackageSelect label="Imported package" packages={packages} value={importedPackageId} onChange={setImportedPackageId} error={fieldErrors.importedPackageId} />
-      <ModalTextField label="Alias (optional)" value={alias} onChange={setAlias} error={fieldErrors.alias} />
-      <ModalTextField label="Source (optional)" value={source} onChange={setSource} error={fieldErrors.source} />
-      <p className="modal-hint">Cycles, aliases and namespace resolution are validated by the backend.</p>
-      {!expectedRevision ? <p className="modal-form-error">The model revision is not available.</p> : null}
-      {error ? <p className="modal-form-error" role="alert">{error}</p> : null}
-    </ModalShell>
-  );
-}
-
 function ModalPackageSelect({ label, packages, value, onChange, includeRoot = false, error }: { label: string; packages: NonNullable<ProjectDto['umlModel']['packages']>; value: string; onChange: (value: string) => void; includeRoot?: boolean; error?: string }) {
   return <label className="modal-field"><span>{label}</span><select value={value} aria-invalid={Boolean(error) || undefined} onChange={(event) => onChange(event.target.value)}>{includeRoot ? <option value="">Project root</option> : null}{packages.map((item) => <option key={item.id} value={item.id}>{item.qualifiedName}</option>)}</select>{error ? <small className="property-field-error">{error}</small> : null}</label>;
 }
@@ -193,11 +149,13 @@ function commandFieldErrors(error: unknown): Record<string, string> {
 function AddClassModal({
   modal,
   project,
-  onProjectChange,
+  expectedRevision,
+  onRefreshProject,
 }: {
   modal: Extract<ClassDiagramModalState, { type: 'addClass' }>;
   project: ProjectDto;
-  onProjectChange: (project: ProjectDto) => void;
+  expectedRevision: string;
+  onRefreshProject: () => Promise<boolean>;
 }) {
   const [name, setName] = useState('');
   const [attributes, setAttributes] = useState<Array<{ name: string; type: UmlTypeDto }>>([]);
@@ -207,6 +165,8 @@ function AddClassModal({
   const [submitted, setSubmitted] = useState(false);
   const [visibility, setVisibility] = useState<'PUBLIC' | 'PRIVATE' | 'PROTECTED' | 'PACKAGE'>('PUBLIC');
   const [packageId, setPackageId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const trimmedName = name.trim();
   const hasDuplicateName = project.umlModel.classes.some(
     (umlClass) => umlClass.name.toLocaleLowerCase() === trimmedName.toLocaleLowerCase(),
@@ -214,12 +174,13 @@ function AddClassModal({
   const hasInvalidAttributes = attributes.some((attribute) => !attribute.name.trim());
   const hasInvalidOperations = operations.some((operation) => !operation.name.trim());
   const canSubmit =
-    trimmedName.length > 0 && !hasDuplicateName && !hasInvalidAttributes && !hasInvalidOperations;
+    trimmedName.length > 0 && !hasDuplicateName && !hasInvalidAttributes && !hasInvalidOperations &&
+    Boolean(expectedRevision) && !busy;
 
   return (
     <ModalShell
       title="Add New Class"
-      submitLabel="Create Class"
+      submitLabel={busy ? 'Creating...' : 'Create Class'}
       canSubmit={canSubmit}
       onSubmit={(event) => {
         event.preventDefault();
@@ -229,7 +190,9 @@ function AddClassModal({
           return;
         }
 
-        const result = addClass(project, {
+        setBusy(true);
+        setError(null);
+        const localResult = addClass(project, {
           name,
           attributes: attributes.filter((attribute) => attribute.name.trim()),
           operations: operations.filter((operation) => operation.name.trim()),
@@ -237,18 +200,38 @@ function AddClassModal({
           visibility,
           packageId: packageId || null,
         });
-        syncProjectChange({
-          projectId: project.project.id,
-          nextProject: result.project,
-          onProjectChange,
-          successMessage: `Class "${trimmedName}" saved.`,
-        });
-        appStoreActions.select({
-          view: 'class-diagram',
-          type: 'class',
-          id: result.createdId,
-        });
-        appStoreActions.closeModal();
+        const draft = localResult.project.umlModel.classes.find(
+          (umlClass) => umlClass.id === localResult.createdId,
+        );
+
+        if (!draft) {
+          setError('The class draft could not be prepared.');
+          setBusy(false);
+          return;
+        }
+
+        void modelCommandApi
+          .createClass(project.project.id, { expectedRevision, draft })
+          .then(async (result) => {
+            if (!(await onRefreshProject())) {
+              throw new Error('The authoritative class projection could not be reloaded.');
+            }
+            appStoreActions.select({
+              view: 'class-diagram',
+              type: 'class',
+              id: result.result.id,
+            });
+            appStoreActions.addConsoleLog({
+              level: 'info',
+              source: 'api',
+              message: `Class "${result.result.name}" created at model revision ${result.revision}.`,
+            });
+            appStoreActions.closeModal();
+          })
+          .catch((cause) => {
+            setError(commandMessage(cause));
+            setBusy(false);
+          });
       }}
     >
       <ModalTextField
@@ -261,6 +244,8 @@ function AddClassModal({
       {submitted && hasDuplicateName ? (
         <p className="modal-form-error">Class name must be unique.</p>
       ) : null}
+      {!expectedRevision ? <p className="modal-form-error">A model revision is required.</p> : null}
+      {error ? <p className="modal-form-error" role="alert">{error}</p> : null}
       <label className="modal-field"><span>Visibility</span><select value={visibility} onChange={(event) => setVisibility(event.target.value as typeof visibility)}><option value="PUBLIC">+ public</option><option value="PRIVATE">- private</option><option value="PROTECTED"># protected</option><option value="PACKAGE">~ package</option></select></label>
       <ModalPackageSelect label="Package / Namespace" packages={project.umlModel.packages ?? []} value={packageId} onChange={setPackageId} includeRoot />
 
@@ -378,8 +363,6 @@ function AddAssociationModal({
     name.trim().length > 0 &&
     sourceClassId.length > 0 &&
     targetClassId.length > 0 &&
-    sourceRoleName.trim().length > 0 &&
-    targetRoleName.trim().length > 0 &&
     Boolean(parsedSourceMultiplicity) &&
     Boolean(parsedTargetMultiplicity);
 
@@ -450,9 +433,8 @@ function AddAssociationModal({
       <ModalSection title="Source End">
         <div className="modal-row-grid">
           <ModalTextField
-            label="Source Role"
+            label="Source Role (optional)"
             value={sourceRoleName}
-            error={submitted && !sourceRoleName.trim() ? 'Required' : null}
             onChange={setSourceRoleName}
           />
           <ModalTextField
@@ -470,9 +452,8 @@ function AddAssociationModal({
       <ModalSection title="Target End">
         <div className="modal-row-grid">
           <ModalTextField
-            label="Target Role"
+            label="Target Role (optional)"
             value={targetRoleName}
-            error={submitted && !targetRoleName.trim() ? 'Required' : null}
             onChange={setTargetRoleName}
           />
           <ModalTextField
@@ -499,7 +480,7 @@ function createEnd(
   return {
     id: `association-end-${crypto.randomUUID()}`,
     classId,
-    roleName: roleName.trim(),
+    roleName: roleName.trim() || null,
     multiplicity,
     navigable: true,
     ordered: false,
@@ -778,7 +759,7 @@ function isClassDiagramModal(modal: Exclude<ModalState, null>): modal is ClassDi
     modal.type === 'addClassAssociation' ||
     modal.type === 'addInvariant' ||
     modal.type === 'addPackage' ||
-    modal.type === 'addImport' ||
+    modal.type === 'addSourceImport' ||
     modal.type === 'addEnumeration' ||
     modal.type === 'addDataType'
   );

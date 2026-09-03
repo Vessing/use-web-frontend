@@ -101,12 +101,37 @@ function ArgumentField({ project, parameter, value, error, onChange }: { project
 function effectiveOperations(project: ProjectDto, classId: string, readModel?: ProjectReadModelDto | null) {
   const byId = new Map(project.umlModel.classes.flatMap((owner) => owner.operations.map((operation) => [operation.id, { operation, ownerName: owner.name }] as const)));
   const projection = readModel?.classes.find((candidate) => candidate.id === classId);
-  if (projection) return projection.operations.flatMap((feature) => {
+  const projectedOperations = projection?.operations.flatMap((feature) => {
     const match = byId.get(feature.id);
     return match ? [{ ...match, inherited: feature.inherited }] : [];
-  });
+  }) ?? [];
   const owner = project.umlModel.classes.find((candidate) => candidate.id === classId);
-  return (owner?.operations ?? []).map((operation) => ({ operation, ownerName: owner?.name ?? classId, inherited: false }));
+  const hierarchyOperations = owner
+    ? effectiveOperationsFromHierarchy(project, owner.id).map(({ operation, owner: operationOwner }) => ({
+      operation,
+      ownerName: operationOwner.name,
+      inherited: operationOwner.id !== owner.id,
+    }))
+    : [];
+  if (projectedOperations.length === 0) return hierarchyOperations;
+  const projectedIds = new Set(projectedOperations.map((candidate) => candidate.operation.id));
+  return [...projectedOperations, ...hierarchyOperations.filter((candidate) => !projectedIds.has(candidate.operation.id))];
+}
+
+function effectiveOperationsFromHierarchy(
+  project: ProjectDto,
+  classId: string,
+  visited = new Set<string>(),
+): Array<{ operation: ProjectDto['umlModel']['classes'][number]['operations'][number]; owner: ProjectDto['umlModel']['classes'][number] }> {
+  if (visited.has(classId)) return [];
+  visited.add(classId);
+  const owner = project.umlModel.classes.find((candidate) => candidate.id === classId);
+  if (!owner) return [];
+  return [
+    ...(owner.superClassIds ?? []).flatMap((superclassId) =>
+      effectiveOperationsFromHierarchy(project, superclassId, visited)),
+    ...owner.operations.map((operation) => ({ operation, owner })),
+  ];
 }
 
 function parseArgument(project: ProjectDto, parameter: UmlParameterDto, raw: string): { value?: SlotValueDto; error?: string } {

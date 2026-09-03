@@ -114,7 +114,7 @@ export function ImportPropertiesPanel({
       });
       if (!await onRefreshProject()) throw new Error('The authoritative project projection could not be reloaded.');
       setNotice(`Import saved at model revision ${result.revision}.`);
-      appStoreActions.addConsoleLog({ level: 'info', source: 'api', message: `Import ${result.result.alias || result.result.id} saved at model revision ${result.revision}.` });
+      appStoreActions.addConsoleLog({ level: 'info', source: 'api', message: `Import ${importDisplayName(result.result, packages)} saved at model revision ${result.revision}.` });
     } catch (caught) {
       setError(commandMessage(caught)); setFieldErrors(commandFieldErrors(caught));
     } finally {
@@ -180,7 +180,11 @@ function packageDraft(umlPackage: UmlPackageDto, packages: UmlPackageDto[]) {
 }
 
 function packageName(project: ProjectDto, packageId: string) {
-  return project.umlModel.packages?.find((item) => item.id === packageId)?.qualifiedName ?? packageId;
+  return project.umlModel.packages?.find((item) => item.id === packageId)?.qualifiedName ?? 'unknown package';
+}
+
+function importDisplayName(modelImport: UmlModelImportDto, packages: UmlPackageDto[]) {
+  return modelImport.alias?.trim() || packages.find((item) => item.id === modelImport.importedPackageId)?.qualifiedName || 'package import';
 }
 
 function commandMessage(error: unknown) {

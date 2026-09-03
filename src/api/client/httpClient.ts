@@ -17,6 +17,7 @@ interface JsonRequestOptions<TRequest> {
   method: string;
   headers?: HeadersInit;
   body?: TRequest;
+  cache?: RequestCache;
 }
 
 export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
@@ -50,7 +51,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
   }
 
   return {
-    get: (path) => request(path, { method: 'GET' }),
+    get: (path) => request(path, { method: 'GET', cache: 'no-store' }),
     post: (path, body) => request(path, { method: 'POST', body }),
     put: (path, body) => request(path, { method: 'PUT', body }),
     delete: (path, body) => request(path, { method: 'DELETE', body }),
