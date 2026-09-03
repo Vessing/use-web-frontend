@@ -807,6 +807,8 @@ textarea {
   width: 42px;
   height: 42px;
   background: #ffffff;
+  padding: 6px;
+  object-fit: contain;
 }
 
 .support-links strong,

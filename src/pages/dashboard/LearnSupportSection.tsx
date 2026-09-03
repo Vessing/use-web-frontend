@@ -6,7 +6,7 @@ export function LearnSupportSection() {
       <h2 id="learn-support-title">Learn &amp; Support</h2>
       <div className="support-links">
         <a href="/docs" onClick={(event) => { event.preventDefault(); navigateTo('/docs'); }}>
-          <span className="support-icon" aria-hidden="true" />
+          <img src="/dokument.png" alt="" aria-hidden="true" className="support-icon" />
           <span>
             <strong>Documentation</strong>
             <small>Learn UML &amp; OCL</small>
